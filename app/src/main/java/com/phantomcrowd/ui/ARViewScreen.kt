@@ -126,16 +126,45 @@ fun ARViewScreen(viewModel: MainViewModel) {
                         }
                     })
 
+                    // Track if we've logged session info (to avoid spam)
+                    var hasLoggedSessionInfo = false
+                    var lastLogTime = 0L
+                    
                     this.scene.addOnUpdateListener { _ ->
                         val session = this.session
+                        val now = System.currentTimeMillis()
+                        
+                        // Log every 2 seconds to reduce spam
+                        val shouldLog = (now - lastLogTime) > 2000
+                        
                         if (session == null) {
+                            if (shouldLog) {
+                                android.util.Log.w("ARCore", "UPDATE: Session is NULL - AR not initialized yet")
+                                lastLogTime = now
+                            }
                             return@addOnUpdateListener
                         }
+                        
+                        // Log session info once
+                        if (!hasLoggedSessionInfo) {
+                            android.util.Log.d("ARCore", "UPDATE: Session created! Config: geospatialMode=${session.config.geospatialMode}")
+                            hasLoggedSessionInfo = true
+                        }
+                        
                         val earth = session.earth
+                        
+                        if (shouldLog) {
+                            android.util.Log.d("ARCore", "UPDATE: Earth=${earth != null}, EarthState=${earth?.earthState}, TrackingState=${earth?.trackingState}")
+                            lastLogTime = now
+                        }
                         
                         if (earth?.trackingState == TrackingState.TRACKING) {
                             val pose = earth.cameraGeospatialPose
                             statusText = "GPS: ${pose.latitude}, ${pose.longitude}\nAcc: ${pose.horizontalAccuracy}m"
+                            
+                            if (shouldLog) {
+                                android.util.Log.d("ARCore", "TRACKING: Lat=${pose.latitude}, Lon=${pose.longitude}, Acc=${pose.horizontalAccuracy}m")
+                            }
                             
                             // Check for new anchors to render
                             val currentList = anchors
