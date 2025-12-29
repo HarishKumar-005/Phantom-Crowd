@@ -33,17 +33,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
     
     fun updateLocation() {
+        android.util.Log.d("GPS", "updateLocation() called in ViewModel")
         // Start updates in utils
         gpsUtils.startLocationUpdates()
         
         viewModelScope.launch {
             // Collect updates from the flow
             gpsUtils.locationFlow.collect { location ->
+                 android.util.Log.d("GPS", "ViewModel received location: $location")
                  _currentLocation.value = location
                  if (location != null) {
                     // Update nearby list using 50m radius
                     val nearby = repository.getNearbyAnchors(location.latitude, location.longitude, 50.0)
                     _anchors.value = nearby
+                    android.util.Log.d("GPS", "Found ${nearby.size} nearby anchors")
                     
                     // Update all anchors for AR view
                     allAnchors.value = repository.getAllAnchors()

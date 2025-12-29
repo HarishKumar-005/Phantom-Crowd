@@ -5,97 +5,113 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.location.Location
+import android.os.Looper
+import android.util.Log
 import androidx.core.app.ActivityCompat
 import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
-import com.google.android.gms.tasks.CancellationTokenSource
-import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 
 class GPSUtils(private val context: Context) {
+
+    companion object {
+        private const val TAG = "GPS"
+    }
 
     private val fusedLocationClient: FusedLocationProviderClient =
         LocationServices.getFusedLocationProviderClient(context)
 
+    private val _locationFlow = MutableStateFlow<Location?>(null)
+    val locationFlow: StateFlow<Location?> = _locationFlow
+
+    private var locationCallback: LocationCallback? = null
+    private var isRequestingUpdates = false
+
     private fun hasLocationPermission(): Boolean {
-        return ActivityCompat.checkSelfPermission(
+        val fineGranted = ActivityCompat.checkSelfPermission(
             context,
             Manifest.permission.ACCESS_FINE_LOCATION
-        ) == PackageManager.PERMISSION_GRANTED &&
-                ActivityCompat.checkSelfPermission(
-                    context,
-                    Manifest.permission.ACCESS_COARSE_LOCATION
-                ) == PackageManager.PERMISSION_GRANTED
+        ) == PackageManager.PERMISSION_GRANTED
+        val coarseGranted = ActivityCompat.checkSelfPermission(
+            context,
+            Manifest.permission.ACCESS_COARSE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+        Log.d(TAG, "Permission check: fine=$fineGranted, coarse=$coarseGranted")
+        return fineGranted || coarseGranted
     }
-
-    private val _locationFlow = kotlinx.coroutines.flow.MutableStateFlow<Location?>(null)
-    val locationFlow: kotlinx.coroutines.flow.StateFlow<Location?> = _locationFlow.asStateFlow()
 
     @SuppressLint("MissingPermission")
     fun startLocationUpdates() {
         if (!hasLocationPermission()) {
-            android.util.Log.e(Constants.TAG_PERMISSION, "Location permission missing in GPSUtils")
+            Log.e(TAG, "Location permission not granted!")
             return
         }
 
-        try {
-            val locationRequest = com.google.android.gms.location.LocationRequest.Builder(
-                Priority.PRIORITY_HIGH_ACCURACY, 2000 // Update every 2 seconds
-            ).build()
+        if (isRequestingUpdates) {
+            Log.d(TAG, "Already requesting location updates")
+            return
+        }
 
-            val locationCallback = object : com.google.android.gms.location.LocationCallback() {
-                override fun onLocationResult(result: com.google.android.gms.location.LocationResult) {
-                    for (location in result.locations) {
-                         android.util.Log.d(Constants.TAG_GPS, "Location update: ${location.latitude}, ${location.longitude}")
-                         _locationFlow.value = location
-                    }
+        Log.d(TAG, "Starting location updates...")
+
+        val locationRequest = LocationRequest.Builder(
+            Priority.PRIORITY_HIGH_ACCURACY, 2000L
+        ).setMinUpdateIntervalMillis(1000L).build()
+
+        locationCallback = object : LocationCallback() {
+            override fun onLocationResult(locationResult: LocationResult) {
+                val location = locationResult.lastLocation
+                if (location != null) {
+                    Log.d(TAG, "Location received: ${location.latitude}, ${location.longitude}")
+                    _locationFlow.value = location
+                } else {
+                    Log.w(TAG, "LocationResult returned null location")
                 }
             }
-            
+        }
+
+        try {
             fusedLocationClient.requestLocationUpdates(
                 locationRequest,
-                locationCallback,
-                android.os.Looper.getMainLooper()
+                locationCallback!!,
+                Looper.getMainLooper()
             )
-            android.util.Log.d(Constants.TAG_GPS, "Location updates requested")
+            isRequestingUpdates = true
+            Log.d(TAG, "Location updates started successfully")
+
+            // Also try to get last known location immediately
+            fusedLocationClient.lastLocation.addOnSuccessListener { location ->
+                if (location != null) {
+                    Log.d(TAG, "Last known location: ${location.latitude}, ${location.longitude}")
+                    _locationFlow.value = location
+                } else {
+                    Log.d(TAG, "Last known location is null, waiting for updates...")
+                }
+            }.addOnFailureListener { e ->
+                Log.e(TAG, "Failed to get last location", e)
+            }
 
         } catch (e: Exception) {
-            android.util.Log.e(Constants.TAG_GPS, "Error requesting location updates", e)
+            Log.e(TAG, "Error starting location updates", e)
         }
     }
 
-    @SuppressLint("MissingPermission")
-    suspend fun getCurrentLocation(): Location? {
-        if (!hasLocationPermission()) {
-             android.util.Log.e(Constants.TAG_PERMISSION, "Location permission denied")
-             return null
-        }
-
-        return try {
-            // Try to get the current location with high accuracy
-            val result = fusedLocationClient.getCurrentLocation(
-                Priority.PRIORITY_HIGH_ACCURACY,
-                CancellationTokenSource().token
-            ).await()
-            
-            if (result != null) {
-                android.util.Log.d(Constants.TAG_GPS, "Location: ${result.latitude}, ${result.longitude}")
-            } else {
-                android.util.Log.w(Constants.TAG_GPS, "Location is null")
-            }
-            result
-        } catch (e: Exception) {
-            android.util.Log.e(Constants.TAG_GPS, "GPS Error", e)
-            e.printStackTrace()
-            // Fallback to last known location
-            try {
-                fusedLocationClient.lastLocation.await()
-            } catch (e2: Exception) {
-                null
-            }
+    fun stopLocationUpdates() {
+        locationCallback?.let {
+            fusedLocationClient.removeLocationUpdates(it)
+            isRequestingUpdates = false
+            Log.d(TAG, "Location updates stopped")
         }
     }
 
+    /**
+     * Get distance between two points in meters.
+     */
     @Suppress("unused")
     fun getDistanceBetween(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Float {
         val results = FloatArray(1)

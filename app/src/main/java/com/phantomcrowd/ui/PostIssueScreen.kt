@@ -31,11 +31,19 @@ fun PostIssueScreen(viewModel: MainViewModel) {
         Spacer(modifier = Modifier.height(24.dp))
         
         if (currentLocation == null) {
-            Button(onClick = { viewModel.updateLocation() }) {
+            Button(
+                onClick = { 
+                    android.util.Log.d("GPS", "Get GPS Location button clicked!")
+                    android.widget.Toast.makeText(context, "Getting location...", android.widget.Toast.LENGTH_SHORT).show()
+                    viewModel.updateLocation() 
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 Text("Get GPS Location")
             }
+            Text("Tap button to get your current location", style = MaterialTheme.typography.bodySmall)
         } else {
-            Text("Location: ${currentLocation?.latitude}, ${currentLocation?.longitude}")
+            Text("📍 Location: ${String.format("%.6f", currentLocation?.latitude)}, ${String.format("%.6f", currentLocation?.longitude)}")
         }
         
         Spacer(modifier = Modifier.height(16.dp))

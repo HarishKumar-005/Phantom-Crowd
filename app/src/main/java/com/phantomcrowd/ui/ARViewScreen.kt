@@ -37,17 +37,21 @@ fun ARViewScreen(viewModel: MainViewModel) {
     
     // Check permission on composition
     LaunchedEffect(Unit) {
+        android.util.Log.d("ARCore", "ARViewScreen: Checking camera permission...")
         val permission = android.Manifest.permission.CAMERA
         if (androidx.core.content.ContextCompat.checkSelfPermission(context, permission) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
              hasCameraPermission = true
+             android.util.Log.d("ARCore", "ARViewScreen: Camera permission GRANTED")
         } else {
+             android.util.Log.e("ARCore", "ARViewScreen: Camera permission DENIED")
              Toast.makeText(context, "Camera permission needed for AR", Toast.LENGTH_LONG).show()
         }
     }
     
     if (!hasCameraPermission) {
         Box(modifier = Modifier.fillMaxSize()) {
-            Text("Camera Permission Required", modifier = Modifier.align(Alignment.Center))
+            Text("Camera Permission Required\nPlease grant camera permission and reopen this tab", 
+                modifier = Modifier.align(Alignment.Center))
         }
         return
     }
@@ -97,11 +101,36 @@ fun ARViewScreen(viewModel: MainViewModel) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
+                android.util.Log.d("ARCore", "Creating ArSceneView...")
                 ArSceneView(ctx).apply {
                     arSceneView = this
+                    android.util.Log.d("ARCore", "ArSceneView created, adding update listener...")
                     
+                    // Handle lifecycle manually using View attachment
+                    // This ensures we don't resume before the view is attached to the window
+                    this.addOnAttachStateChangeListener(object : android.view.View.OnAttachStateChangeListener {
+                        override fun onViewAttachedToWindow(v: android.view.View) {
+                            android.util.Log.d("ARCore", "ArSceneView attached to window")
+                            if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                                android.util.Log.d("ARCore", "Lifecycle RESUMED, calling resume() from onViewAttachedToWindow")
+                                try {
+                                    (v as ArSceneView).resume()
+                                } catch (e: Exception) {
+                                    android.util.Log.e("ARCore", "Error resuming in onViewAttachedToWindow", e)
+                                }
+                            }
+                        }
+
+                        override fun onViewDetachedFromWindow(v: android.view.View) {
+                            android.util.Log.d("ARCore", "ArSceneView detached from window")
+                        }
+                    })
+
                     this.scene.addOnUpdateListener { _ ->
-                        val session = this.session ?: return@addOnUpdateListener
+                        val session = this.session
+                        if (session == null) {
+                            return@addOnUpdateListener
+                        }
                         val earth = session.earth
                         
                         if (earth?.trackingState == TrackingState.TRACKING) {
@@ -136,14 +165,14 @@ fun ARViewScreen(viewModel: MainViewModel) {
                     }
                 }
             },
-           update = { view ->
-               val session = view.session
-               if (session != null && session.config.geospatialMode != Config.GeospatialMode.ENABLED) {
-                   val config = session.config
-                   config.geospatialMode = Config.GeospatialMode.ENABLED
-                   session.configure(config)
-               }
-           }
+            update = { view ->
+                val session = view.session
+                if (session != null && session.config.geospatialMode != Config.GeospatialMode.ENABLED) {
+                    val config = session.config
+                    config.geospatialMode = Config.GeospatialMode.ENABLED
+                    session.configure(config)
+                }
+            }
         )
         
         Text(
@@ -152,7 +181,7 @@ fun ARViewScreen(viewModel: MainViewModel) {
             modifier = Modifier
                 .align(Alignment.TopStart)
                 .padding(16.dp),
-             style = androidx.compose.material3.MaterialTheme.typography.bodySmall
+            style = androidx.compose.material3.MaterialTheme.typography.bodySmall
         )
     }
 }
