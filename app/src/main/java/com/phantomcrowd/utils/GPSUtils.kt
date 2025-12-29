@@ -17,7 +17,7 @@ class GPSUtils(private val context: Context) {
     private val fusedLocationClient: FusedLocationProviderClient =
         LocationServices.getFusedLocationProviderClient(context)
 
-    fun hasLocationPermission(): Boolean {
+    private fun hasLocationPermission(): Boolean {
         return ActivityCompat.checkSelfPermission(
             context,
             Manifest.permission.ACCESS_FINE_LOCATION
@@ -45,6 +45,7 @@ class GPSUtils(private val context: Context) {
         }
     }
 
+    @Suppress("unused")
     fun getDistanceBetween(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Float {
         val results = FloatArray(1)
         Location.distanceBetween(lat1, lon1, lat2, lon2, results)
