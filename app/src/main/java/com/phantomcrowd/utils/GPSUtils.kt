@@ -28,6 +28,9 @@ class GPSUtils(private val context: Context) {
                 ) == PackageManager.PERMISSION_GRANTED
     }
 
+    private val _locationFlow = kotlinx.coroutines.flow.MutableStateFlow<Location?>(null)
+    val locationFlow: kotlinx.coroutines.flow.StateFlow<Location?> = _locationFlow.asStateFlow()
+
     @SuppressLint("MissingPermission")
     fun startLocationUpdates() {
         if (!hasLocationPermission()) {
@@ -37,13 +40,14 @@ class GPSUtils(private val context: Context) {
 
         try {
             val locationRequest = com.google.android.gms.location.LocationRequest.Builder(
-                Priority.PRIORITY_HIGH_ACCURACY, 1000
+                Priority.PRIORITY_HIGH_ACCURACY, 2000 // Update every 2 seconds
             ).build()
 
             val locationCallback = object : com.google.android.gms.location.LocationCallback() {
                 override fun onLocationResult(result: com.google.android.gms.location.LocationResult) {
                     for (location in result.locations) {
-                         android.util.Log.d(Constants.TAG_GPS, "Location: ${location.latitude}, ${location.longitude}")
+                         android.util.Log.d(Constants.TAG_GPS, "Location update: ${location.latitude}, ${location.longitude}")
+                         _locationFlow.value = location
                     }
                 }
             }

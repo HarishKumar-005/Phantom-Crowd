@@ -33,16 +33,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
     
     fun updateLocation() {
+        // Start updates in utils
+        gpsUtils.startLocationUpdates()
+        
         viewModelScope.launch {
-            val location = gpsUtils.getCurrentLocation()
-            _currentLocation.value = location
-            if (location != null) {
-                // Update nearby list using 50m radius
-                val nearby = repository.getNearbyAnchors(location.latitude, location.longitude, 50.0)
-                _anchors.value = nearby
-                
-                // Update all anchors for AR view
-                allAnchors.value = repository.getAllAnchors()
+            // Collect updates from the flow
+            gpsUtils.locationFlow.collect { location ->
+                 _currentLocation.value = location
+                 if (location != null) {
+                    // Update nearby list using 50m radius
+                    val nearby = repository.getNearbyAnchors(location.latitude, location.longitude, 50.0)
+                    _anchors.value = nearby
+                    
+                    // Update all anchors for AR view
+                    allAnchors.value = repository.getAllAnchors()
+                 }
             }
         }
     }
