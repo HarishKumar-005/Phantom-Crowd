@@ -32,6 +32,26 @@ fun ARViewScreen(viewModel: MainViewModel) {
     val lifecycleOwner = LocalLifecycleOwner.current
     val anchors by viewModel.allAnchors.collectAsState()
     
+    // Permission check state
+    var hasCameraPermission by remember { mutableStateOf(false) }
+    
+    // Check permission on composition
+    LaunchedEffect(Unit) {
+        val permission = android.Manifest.permission.CAMERA
+        if (androidx.core.content.ContextCompat.checkSelfPermission(context, permission) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+             hasCameraPermission = true
+        } else {
+             Toast.makeText(context, "Camera permission needed for AR", Toast.LENGTH_LONG).show()
+        }
+    }
+    
+    if (!hasCameraPermission) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            Text("Camera Permission Required", modifier = Modifier.align(Alignment.Center))
+        }
+        return
+    }
+
     // Managers
     val arCoreManager = remember { ARCoreManager(context) }
     val geospatialManager = remember { GeospatialAnchorManager() }
@@ -40,6 +60,7 @@ fun ARViewScreen(viewModel: MainViewModel) {
     // State to track added anchors to avoid duplicates
     val renderedAnchorIds = remember { mutableSetOf<String>() }
     var statusText by remember { mutableStateOf("Initializing AR...") }
+    val startTime = remember { System.currentTimeMillis() }
 
     var arSceneView: ArSceneView? by remember { mutableStateOf(null) }
 
@@ -78,10 +99,6 @@ fun ARViewScreen(viewModel: MainViewModel) {
             factory = { ctx ->
                 ArSceneView(ctx).apply {
                     arSceneView = this
-                    // Manually configure session for Geospatial
-                    // Note: ArSceneView usually creates its own session on resume if null.
-                    // We want to intercept or configure it.
-                    // Ideally check if session exists, if not create and set.
                     
                     this.scene.addOnUpdateListener { _ ->
                         val session = this.session ?: return@addOnUpdateListener
@@ -103,25 +120,23 @@ fun ARViewScreen(viewModel: MainViewModel) {
                                         0.0 // Rotation
                                     )
                                     if (arAnchor != null) {
-                                        // Creating a fake ArFragment reference is hard here since we aren't using one.
-                                        // We need to adapt the renderer to work with Scene directly.
-                                        // Refactoring renderer slightly inside the usage here or passing scene.
-                                        
-                                        // We'll reproduce the renderer logic here for simplicity or adapt the class.
-                                        // Let's assume we can attach to scene.
                                         renderAnchorNode(this, arAnchor, anchorData, renderer)
                                         renderedAnchorIds.add(anchorData.id)
                                     }
                                 }
                             }
                         } else {
-                            statusText = "Waiting for Earth tracking... \nState: ${earth?.earthState}"
+                            val elapsed = System.currentTimeMillis() - startTime
+                            if (elapsed > 10000) { // 10s timeout
+                                 statusText = "Initialization Timeout. \nCheck Location/Internet.\nState: ${earth?.earthState}"
+                            } else {
+                                 statusText = "Waiting for Earth tracking... \nState: ${earth?.earthState ?: "Null"}"
+                            }
                         }
                     }
                 }
             },
            update = { view ->
-               // Ensure session is configured if created by View
                val session = view.session
                if (session != null && session.config.geospatialMode != Config.GeospatialMode.ENABLED) {
                    val config = session.config

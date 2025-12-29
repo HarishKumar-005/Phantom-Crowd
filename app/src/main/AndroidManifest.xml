@@ -26,6 +26,9 @@
         <meta-data
             android:name="com.google.android.ar.API_KEY"
             android:value="${arCoreApiKey}" />
+        <meta-data
+            android:name="com.google.ar.core.geospatial_api_key"
+            android:value="${arCoreApiKey}" />
 
         <activity
             android:name=".ui.MainActivity"
