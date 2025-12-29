@@ -36,6 +36,30 @@ fun MainScreen(viewModel: MainViewModel) {
     var selectedTab by remember { mutableStateOf(0) }
     val tabs = listOf("Nearby", "Post", "AR View")
     
+    val context = androidx.compose.ui.platform.LocalContext.current
+    
+    val permissions = arrayOf(
+        android.Manifest.permission.CAMERA,
+        android.Manifest.permission.ACCESS_FINE_LOCATION,
+        android.Manifest.permission.ACCESS_COARSE_LOCATION
+    )
+
+    val launcher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissionsMap ->
+        val allGranted = permissionsMap.values.all { it }
+        if (allGranted) {
+            android.util.Log.d(com.phantomcrowd.utils.Constants.TAG_PERMISSION, "All permissions granted")
+            viewModel.updateLocation()
+        } else {
+            android.util.Log.e(com.phantomcrowd.utils.Constants.TAG_PERMISSION, "Permissions denied")
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        launcher.launch(permissions)
+    }
+    
     Scaffold(
         bottomBar = {
             NavigationBar {

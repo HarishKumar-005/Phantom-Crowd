@@ -19,12 +19,17 @@ class ARCoreManager(private val context: Context) {
             config.depthMode = Config.DepthMode.DISABLED
             config.focusMode = Config.FocusMode.AUTO
             session?.configure(config)
+            
+            com.phantomcrowd.utils.Constants.TAG_ARCORE.let { tag ->
+                 Log.d(tag, "Session created and configured")
+            }
+            
             return session
         } catch (e: UnavailableException) {
-            Log.e("ARCoreManager", "ARCore session creation failed", e)
+            Log.e(com.phantomcrowd.utils.Constants.TAG_ARCORE, "ARCore session creation failed", e)
             return null
         } catch (e: Exception) {
-            Log.e("ARCoreManager", "Unexpected exception", e)
+            Log.e(com.phantomcrowd.utils.Constants.TAG_ARCORE, "Unexpected exception during AR session creation", e)
             return null
         }
     }
