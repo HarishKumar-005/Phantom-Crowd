@@ -107,18 +107,49 @@ fun ARViewScreen(viewModel: MainViewModel) {
                     android.util.Log.d("ARCore", "ArSceneView created, adding update listener...")
                     
                     // Handle lifecycle manually using View attachment
-                    // This ensures we don't resume before the view is attached to the window
+                    // We need to create and set the session before calling resume()
                     this.addOnAttachStateChangeListener(object : android.view.View.OnAttachStateChangeListener {
                         override fun onViewAttachedToWindow(v: android.view.View) {
                             android.util.Log.d("ARCore", "ArSceneView attached to window")
-                            if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
-                                android.util.Log.d("ARCore", "Lifecycle RESUMED, calling resume() from onViewAttachedToWindow")
-                                try {
-                                    (v as ArSceneView).resume()
-                                } catch (e: Exception) {
-                                    android.util.Log.e("ARCore", "Error resuming in onViewAttachedToWindow", e)
+                            // Defer session setup to ensure surface is created first
+                            v.postDelayed({
+                                if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                                    android.util.Log.d("ARCore", "Setting up AR session...")
+                                    try {
+                                        val arView = v as ArSceneView
+                                        
+                                        // Step 1: Create the ARCore session manually
+                                        android.util.Log.d("ARCore", "Creating ARCore Session...")
+                                        val session = Session(ctx)
+                                        android.util.Log.d("ARCore", "Session created: $session")
+                                        
+                                        // Step 2: Configure the session with Geospatial
+                                        val config = Config(session)
+                                        config.geospatialMode = Config.GeospatialMode.ENABLED
+                                        config.updateMode = Config.UpdateMode.LATEST_CAMERA_IMAGE
+                                        session.configure(config)
+                                        android.util.Log.d("ARCore", "Session configured with geospatial mode")
+                                        
+                                        // Step 3: Set the session on ArSceneView
+                                        arView.setSession(session)
+                                        android.util.Log.d("ARCore", "Session set on ArSceneView")
+                                        
+                                        // Step 4: Resume the view
+                                        arView.resume()
+                                        android.util.Log.d("ARCore", "ArSceneView resumed!")
+                                        android.util.Log.d("ARCore", "Session after setup: ${arView.session}")
+                                        
+                                    } catch (e: com.google.ar.core.exceptions.UnavailableException) {
+                                        android.util.Log.e("ARCore", "ARCore not available: ${e.message}", e)
+                                        statusText = "ARCore unavailable: ${e.message}"
+                                    } catch (e: Exception) {
+                                        android.util.Log.e("ARCore", "Error setting up AR: ${e.message}", e)
+                                        statusText = "AR Error: ${e.message}"
+                                    }
+                                } else {
+                                    android.util.Log.w("ARCore", "Lifecycle not RESUMED, state: ${lifecycleOwner.lifecycle.currentState}")
                                 }
-                            }
+                            }, 200) // Small delay to ensure surface is ready
                         }
 
                         override fun onViewDetachedFromWindow(v: android.view.View) {
