@@ -18,6 +18,18 @@ android {
         vectorDrawables {
             useSupportLibrary true
         }
+
+        // Read API Key from local.properties
+        def localProperties = new Properties()
+        def localPropertiesFile = rootProject.file('local.properties')
+        if (localPropertiesFile.exists()) {
+            localPropertiesFile.withInputStream { stream ->
+                localProperties.load(stream)
+            }
+        }
+        def arApiKey = localProperties.getProperty('AR_CORE_API_KEY') ?: "YOUR_API_KEY_HERE"
+
+        manifestPlaceholders = [arCoreApiKey: arApiKey]
     }
 
     buildTypes {

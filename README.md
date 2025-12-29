@@ -16,18 +16,20 @@ This is the source code for Phase 1 of Phantom Crowd. It implements the Core AR 
 2.  Select "Open" and navigate to `Phantom Crowd` folder.
 3.  Let Gradle sync.
 
-### 2. Configure API Key (CRITICAL)
-Phantom Crowd uses ARCore's Geospatial API which **REQUIRES** a valid Google Cloud API Key.
+### 2. Configure API Key (SECURE WAY)
+Phantom Crowd uses ARCore's Geospatial API. To keep your key safe and not expose it on GitHub:
+
 1.  Go to [Google Cloud Console](https://console.cloud.google.com/).
 2.  Enable **ARCore API**.
 3.  Create an API Key.
-4.  Open `AndroidManifest.xml`.
-5.  Add the meta-data tag inside `<application>` tag (it might be missing or commented out):
-    ```xml
-    <meta-data
-        android:name="com.google.android.ar.API_KEY"
-        android:value="YOUR_API_KEY_HERE" />
+4.  Open the file `local.properties` in the root of your project (this file is ignored by Git).
+5.  Add the following line:
+    ```properties
+    AR_CORE_API_KEY=your_actual_api_key_here
     ```
+    *(Replace `your_actual_api_key_here` with the key starting with AIza...)*
+
+The app will now automatically inject this key into the Manifest during the build process. Do **NOT** verify `local.properties` into version control.
 
 ### 3. Emulator Configuration (For MVP Testing)
 To test AR Geospatial on the emulator:
