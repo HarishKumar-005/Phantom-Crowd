@@ -9,10 +9,10 @@
             <InsightsFilterSettings>
               <option name="connection">
                 <ConnectionSetting>
-                  <option name="appId" value="PLACEHOLDER" />
-                  <option name="mobileSdkAppId" value="" />
-                  <option name="projectId" value="" />
-                  <option name="projectNumber" value="" />
+                  <option name="appId" value="com.phantomcrowd" />
+                  <option name="mobileSdkAppId" value="1:150703844096:android:0c78a7bb6c8b8da2b6e1e5" />
+                  <option name="projectId" value="phantom-crowd" />
+                  <option name="projectNumber" value="150703844096" />
                 </ConnectionSetting>
               </option>
               <option name="signal" value="SIGNAL_UNSPECIFIED" />
