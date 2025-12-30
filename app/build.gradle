@@ -3,6 +3,7 @@ plugins {
     id 'org.jetbrains.kotlin.android'
     id 'com.google.gms.google-services'
     id 'com.google.firebase.crashlytics'
+    id 'org.jetbrains.kotlin.plugin.serialization'
 }
 
 android {
@@ -36,7 +37,7 @@ android {
 
     buildTypes {
         release {
-            minifyEnabled false
+            minifyEnabled true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
@@ -73,7 +74,7 @@ dependencies {
     implementation 'androidx.compose.material3:material3'
 
     // Google Play Services & Maps
-    implementation 'com.google.android.gms:play-services-location:21.0.1'
+    implementation 'com.google.android.gms:play-services-location:21.3.0'
 
     // ARCore
     implementation 'com.google.ar:core:1.41.0'
@@ -81,6 +82,9 @@ dependencies {
     // Sceneform (Maintained version for modern Android)
     // Using com.gorisse.thomas.sceneform as the original is archived and incompatible with modern SDKs
     implementation 'com.gorisse.thomas.sceneform:sceneform:1.23.0'
+    
+    // OpenStreetMap (osmdroid) - Free map tiles, no API key needed
+    implementation 'org.osmdroid:osmdroid-android:6.1.20'
 
     // JSON
     implementation 'com.google.code.gson:gson:2.10.1'
@@ -88,7 +92,11 @@ dependencies {
     // Coroutines
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3'
-    implementation 'com.google.firebase:firebase-crashlytics:20.0.3'
+    
+    // Firebase (Phase A - Cloud Persistence)
+    implementation platform('com.google.firebase:firebase-bom:32.7.0')
+    implementation 'com.google.firebase:firebase-firestore-ktx'
+    implementation 'com.google.firebase:firebase-crashlytics'
 
     // Testing
     testImplementation 'junit:junit:4.13.2'
@@ -98,4 +106,7 @@ dependencies {
     androidTestImplementation 'androidx.compose.ui:ui-test-junit4'
     debugImplementation 'androidx.compose.ui:ui-tooling'
     debugImplementation 'androidx.compose.ui:ui-test-manifest'
+    
+    // Serialization
+    implementation 'org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0'
 }

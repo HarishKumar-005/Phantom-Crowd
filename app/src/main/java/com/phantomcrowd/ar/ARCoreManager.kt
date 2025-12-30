@@ -18,6 +18,7 @@ class ARCoreManager(private val context: Context) {
             config.geospatialMode = Config.GeospatialMode.ENABLED
             config.depthMode = Config.DepthMode.DISABLED
             config.focusMode = Config.FocusMode.AUTO
+            config.cloudAnchorMode = Config.CloudAnchorMode.ENABLED
             session?.configure(config)
             
             com.phantomcrowd.utils.Constants.TAG_ARCORE.let { tag ->

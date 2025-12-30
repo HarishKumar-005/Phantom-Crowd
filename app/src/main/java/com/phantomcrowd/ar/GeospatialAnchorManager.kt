@@ -16,6 +16,20 @@ class GeospatialAnchorManager {
         if (earth == null || earth.trackingState != com.google.ar.core.TrackingState.TRACKING) {
             return null
         }
+        
+        // Phase 1+: Check GPS accuracy threshold
+        val pose = earth.cameraGeospatialPose
+        if (pose.horizontalAccuracy > 10.0) {
+            com.phantomcrowd.utils.Logger.w(
+                com.phantomcrowd.utils.Logger.Category.AR,
+                "Anchor skipped: GPS accuracy ${String.format("%.1f", pose.horizontalAccuracy)}m exceeds 10m threshold"
+            )
+            return null
+        }
+        com.phantomcrowd.utils.Logger.d(
+            com.phantomcrowd.utils.Logger.Category.AR,
+            "Anchor OK: GPS accuracy ${String.format("%.1f", pose.horizontalAccuracy)}m within threshold"
+        )
 
         // Create a quaternion for rotation around Y axis (up)
         // Y-axis rotation (heading)

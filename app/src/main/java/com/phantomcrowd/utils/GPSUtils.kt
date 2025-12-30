@@ -17,10 +17,16 @@ import com.google.android.gms.location.Priority
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
+/**
+ * Utility class for GPS location updates.
+ * Uses FusedLocationProviderClient for accurate and battery-efficient location.
+ */
 class GPSUtils(private val context: Context) {
 
     companion object {
         private const val TAG = "GPS"
+        private const val UPDATE_INTERVAL_MS = 2000L
+        private const val MIN_UPDATE_INTERVAL_MS = 1000L
     }
 
     private val fusedLocationClient: FusedLocationProviderClient =
@@ -41,36 +47,43 @@ class GPSUtils(private val context: Context) {
             context,
             Manifest.permission.ACCESS_COARSE_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
-        Log.d(TAG, "Permission check: fine=$fineGranted, coarse=$coarseGranted")
+        
+        if (DebugConfig.LOG_LOCATION_UPDATES) {
+            Logger.d(Logger.Category.GPS, "Permission check: fine=$fineGranted, coarse=$coarseGranted")
+        }
         return fineGranted || coarseGranted
     }
 
     @SuppressLint("MissingPermission")
     fun startLocationUpdates() {
         if (!hasLocationPermission()) {
-            Log.e(TAG, "Location permission not granted!")
+            Logger.e(Logger.Category.GPS, "Location permission not granted!")
             return
         }
 
         if (isRequestingUpdates) {
-            Log.d(TAG, "Already requesting location updates")
+            Logger.d(Logger.Category.GPS, "Already requesting location updates")
             return
         }
 
-        Log.d(TAG, "Starting location updates...")
+        Logger.i(Logger.Category.GPS, "Starting location updates...")
 
         val locationRequest = LocationRequest.Builder(
-            Priority.PRIORITY_HIGH_ACCURACY, 2000L
-        ).setMinUpdateIntervalMillis(1000L).build()
+            Priority.PRIORITY_HIGH_ACCURACY, UPDATE_INTERVAL_MS
+        ).setMinUpdateIntervalMillis(MIN_UPDATE_INTERVAL_MS).build()
 
         locationCallback = object : LocationCallback() {
             override fun onLocationResult(locationResult: LocationResult) {
                 val location = locationResult.lastLocation
                 if (location != null) {
-                    Log.d(TAG, "Location received: ${location.latitude}, ${location.longitude}")
+                    if (DebugConfig.LOG_LOCATION_UPDATES) {
+                        Logger.d(Logger.Category.GPS, 
+                            "Location: ${location.latitude}, ${location.longitude} " +
+                            "(accuracy: ${location.accuracy}m)")
+                    }
                     _locationFlow.value = location
                 } else {
-                    Log.w(TAG, "LocationResult returned null location")
+                    Logger.w(Logger.Category.GPS, "LocationResult returned null location")
                 }
             }
         }
@@ -82,40 +95,79 @@ class GPSUtils(private val context: Context) {
                 Looper.getMainLooper()
             )
             isRequestingUpdates = true
-            Log.d(TAG, "Location updates started successfully")
+            Logger.i(Logger.Category.GPS, "Location updates started successfully")
 
             // Also try to get last known location immediately
-            fusedLocationClient.lastLocation.addOnSuccessListener { location ->
-                if (location != null) {
-                    Log.d(TAG, "Last known location: ${location.latitude}, ${location.longitude}")
-                    _locationFlow.value = location
-                } else {
-                    Log.d(TAG, "Last known location is null, waiting for updates...")
+            fusedLocationClient.lastLocation
+                .addOnSuccessListener { location ->
+                    if (location != null) {
+                        Logger.d(Logger.Category.GPS, 
+                            "Last known location: ${location.latitude}, ${location.longitude}")
+                        _locationFlow.value = location
+                    } else {
+                        Logger.d(Logger.Category.GPS, "Last known location is null, waiting for updates...")
+                    }
                 }
-            }.addOnFailureListener { e ->
-                Log.e(TAG, "Failed to get last location", e)
-            }
+                .addOnFailureListener { e ->
+                    Logger.e(Logger.Category.GPS, "Failed to get last location", e)
+                }
 
         } catch (e: Exception) {
-            Log.e(TAG, "Error starting location updates", e)
-        }
-    }
-
-    fun stopLocationUpdates() {
-        locationCallback?.let {
-            fusedLocationClient.removeLocationUpdates(it)
+            Logger.e(Logger.Category.GPS, "Error starting location updates", e)
             isRequestingUpdates = false
-            Log.d(TAG, "Location updates stopped")
         }
     }
 
     /**
+     * Stop receiving location updates.
+     */
+    fun stopLocationUpdates() {
+        locationCallback?.let { callback ->
+            try {
+                fusedLocationClient.removeLocationUpdates(callback)
+                Logger.i(Logger.Category.GPS, "Location updates stopped")
+            } catch (e: Exception) {
+                Logger.e(Logger.Category.GPS, "Error stopping location updates", e)
+            }
+        }
+        locationCallback = null
+        isRequestingUpdates = false
+    }
+
+    /**
+     * Clean up all resources. Call this when the component is destroyed.
+     */
+    fun cleanup() {
+        stopLocationUpdates()
+        _locationFlow.value = null
+        Logger.d(Logger.Category.GPS, "GPSUtils cleaned up")
+    }
+
+    /**
+     * Check if currently receiving location updates.
+     */
+    fun isActive(): Boolean = isRequestingUpdates
+
+    /**
+     * Get the current location value (may be null if not yet received).
+     */
+    fun getCurrentLocation(): Location? = _locationFlow.value
+
+    /**
      * Get distance between two points in meters.
      */
-    @Suppress("unused")
     fun getDistanceBetween(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Float {
         val results = FloatArray(1)
         Location.distanceBetween(lat1, lon1, lat2, lon2, results)
         return results[0]
+    }
+
+    /**
+     * Get distance from current location to a point in meters.
+     * Returns null if current location is not available.
+     */
+    fun getDistanceFromCurrent(lat: Double, lon: Double): Float? {
+        val current = _locationFlow.value ?: return null
+        return getDistanceBetween(current.latitude, current.longitude, lat, lon)
     }
 }
