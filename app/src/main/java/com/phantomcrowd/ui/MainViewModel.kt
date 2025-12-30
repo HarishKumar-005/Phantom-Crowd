@@ -52,6 +52,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // All anchors for AR View to consume
     val allAnchors = MutableStateFlow<List<AnchorData>>(emptyList())
 
+    // Pending uploads set (locally tracked IDs)
+    private val _pendingAnchorIds = MutableStateFlow<Set<String>>(emptySet())
+
     // Loading state
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
@@ -127,11 +130,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         Logger.d(Logger.Category.UI, "MainViewModel initialized")
-        loadAnchors()
+
+        // Initialize data in order: Load pending, then load anchors
+        viewModelScope.launch {
+            val pending = storageManager.loadPendingAnchors()
+            _pendingAnchorIds.value = pending.map { it.id }.toSet()
+            Logger.d(Logger.Category.DATA, "Initialized with ${pending.size} pending uploads")
+
+            // Now load anchors, ensuring badges are applied if any
+            loadAnchors()
+        }
         
         // Monitor network status (Phase E)
         NetworkHelper.networkStatusFlow(application)
-            .onEach { _isOnline.value = it }
+            .onEach { online ->
+                _isOnline.value = online
+                if (online) {
+                    syncPendingUploads()
+                }
+            }
             .launchIn(viewModelScope)
     }
     
@@ -182,7 +199,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         location.longitude, 
                         NEARBY_RADIUS_METERS
                     )
-                    _anchors.value = nearby
+
+                    // Apply pending badge to any pending anchors
+                    val pendingIds = _pendingAnchorIds.value
+                    val badgedNearby = nearby.map { anchor ->
+                        if (pendingIds.contains(anchor.id)) {
+                            anchor.copy(messageText = "${anchor.messageText} [Pending Sync]")
+                        } else {
+                            anchor
+                        }
+                    }
+
+                    _anchors.value = badgedNearby
                     Logger.d(Logger.Category.DATA, "Found ${nearby.size} nearby anchors")
 
                     // Update all anchors for AR view
@@ -230,8 +258,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 )
                 Logger.i(Logger.Category.DATA, "Posted new issue: ${anchor.id}")
                 
-                // Phase A: Upload to Firebase cloud
-                uploadIssueToCloud(anchor)
+                if (!_isOnline.value) {
+                    // Offline: Save to pending queue AND main storage so it shows up
+                    storageManager.saveAnchor(anchor)
+                    storageManager.savePendingAnchor(anchor)
+                    val newPendingIds = _pendingAnchorIds.value.toMutableSet()
+                    newPendingIds.add(anchor.id)
+                    _pendingAnchorIds.value = newPendingIds
+
+                    _syncStatus.value = "Offline - queued for sync"
+                } else {
+                    // Phase A: Upload to Firebase cloud
+                    uploadIssueToCloud(anchor)
+                }
                 
                 // Refresh data
                 updateLocation()
@@ -260,6 +299,45 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // ═══════════════════════════════════════════════════════════════════════════
     // PHASE A: Firebase Cloud Sync Functions
     // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Sync any pending uploads when online.
+     */
+    private fun syncPendingUploads() {
+        viewModelScope.launch(exceptionHandler) {
+            val pendingAnchors = storageManager.loadPendingAnchors()
+            if (pendingAnchors.isEmpty()) return@launch
+
+            Logger.d(Logger.Category.DATA, "Syncing ${pendingAnchors.size} pending uploads...")
+            _syncStatus.value = "Syncing pending..."
+
+            for (anchor in pendingAnchors) {
+                val result = firebaseManager.uploadIssue(anchor)
+                result.onSuccess {
+                    // Remove from pending storage
+                    storageManager.removePendingAnchor(anchor.id)
+
+                    // Update local pending IDs set
+                    val newPendingIds = _pendingAnchorIds.value.toMutableSet()
+                    newPendingIds.remove(anchor.id)
+                    _pendingAnchorIds.value = newPendingIds
+
+                    Logger.i(Logger.Category.DATA, "Synced pending anchor: ${anchor.id}")
+                }
+                result.onFailure { e ->
+                    Logger.e(Logger.Category.DATA, "Failed to sync anchor: ${anchor.id}", e)
+                }
+            }
+
+            if (_pendingAnchorIds.value.isEmpty()) {
+                _syncStatus.value = "All synced ✓"
+                // Refresh UI to remove badges
+                updateLocation()
+            } else {
+                _syncStatus.value = "Sync partial/failed"
+            }
+        }
+    }
     
     /**
      * Upload an issue to Firebase Firestore.
