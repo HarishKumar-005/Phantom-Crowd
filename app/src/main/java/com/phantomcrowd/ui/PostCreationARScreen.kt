@@ -13,6 +13,131 @@ import com.phantomcrowd.utils.Logger
 import kotlinx.coroutines.launch
 import java.util.UUID
 
+// CameraX imports
+import android.net.Uri
+import android.graphics.BitmapFactory
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.core.content.ContextCompat
+import java.io.File
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageCapture
+import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
+import androidx.compose.ui.viewinterop.AndroidView
+
+@Composable
+fun CameraCaptureScreen(
+    onImageCaptured: (Uri) -> Unit,
+    onError: (ImageCaptureException) -> Unit,
+    onClose: () -> Unit
+) {
+    val context = LocalContext.current
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+
+    var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        AndroidView(
+            factory = { ctx ->
+                val previewView = PreviewView(ctx)
+                val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
+
+                cameraProviderFuture.addListener({
+                    val cameraProvider = cameraProviderFuture.get()
+
+                    val preview = Preview.Builder().build().also {
+                        it.setSurfaceProvider(previewView.surfaceProvider)
+                    }
+
+                    val capture = ImageCapture.Builder().build()
+                    imageCapture = capture
+
+                    val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+
+                    try {
+                        cameraProvider.unbindAll()
+                        cameraProvider.bindToLifecycle(
+                            lifecycleOwner,
+                            cameraSelector,
+                            preview,
+                            capture
+                        )
+                    } catch (exc: Exception) {
+                        Logger.e(Logger.Category.AR, "Use case binding failed", exc)
+                    }
+                }, ContextCompat.getMainExecutor(ctx))
+
+                previewView
+            },
+            modifier = Modifier.fillMaxSize()
+        )
+
+        // Overlay UI
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(24.dp),
+            verticalArrangement = Arrangement.SpaceBetween,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Start
+            ) {
+                IconButton(
+                    onClick = onClose,
+                    modifier = Modifier
+                        .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(50))
+                ) {
+                    Text("✕", color = Color.White)
+                }
+            }
+
+            Button(
+                onClick = {
+                    val capture = imageCapture ?: return@Button
+
+                    val photoFile = File(
+                        context.cacheDir,
+                        "AR_ISSUE_${System.currentTimeMillis()}.jpg"
+                    )
+
+                    val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
+
+                    capture.takePicture(
+                        outputOptions,
+                        ContextCompat.getMainExecutor(context),
+                        object : ImageCapture.OnImageSavedCallback {
+                            override fun onError(exc: ImageCaptureException) {
+                                onError(exc)
+                            }
+
+                            override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+                                onImageCaptured(Uri.fromFile(photoFile))
+                            }
+                        }
+                    )
+                },
+                modifier = Modifier
+                    .size(80.dp)
+                    .background(Color.Transparent),
+                shape = RoundedCornerShape(50),
+                colors = ButtonDefaults.buttonColors(containerColor = Color.White)
+            ) {
+                // Shutter button style handled by shape/color above
+            }
+        }
+    }
+}
+
 /**
  * Modern SceneView-ready Posting Screen.
  * Currently uses Form-based input to ensure stability during migration.
@@ -32,21 +157,36 @@ fun PostCreationARScreen(
     var messageText by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf("General") }
     var isPosting by remember { mutableStateOf(false) }
+    var capturedPhotoUri by remember { mutableStateOf<Uri?>(null) }
+    var showCamera by remember { mutableStateOf(false) }
     
     val categories = listOf("General", "Infrastructure", "Safety", "Environment", "Other")
     val currentLocation by viewModel.currentLocation.collectAsState()
     
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        Text(
-            "Post Message (Modern AR)",
-            style = MaterialTheme.typography.headlineMedium
+    if (showCamera) {
+        CameraCaptureScreen(
+            onImageCaptured = { uri ->
+                capturedPhotoUri = uri
+                showCamera = false
+            },
+            onError = { exc ->
+                Toast.makeText(context, "Camera error: ${exc.message}", Toast.LENGTH_SHORT).show()
+                showCamera = false
+            },
+            onClose = { showCamera = false }
         )
+    } else {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Text(
+                "Post Message (Modern AR)",
+                style = MaterialTheme.typography.headlineMedium
+            )
         
         Card(
             colors = CardDefaults.cardColors(
@@ -84,6 +224,53 @@ fun PostCreationARScreen(
             )
         }
         
+        // Photo Preview Section
+        if (capturedPhotoUri != null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(200.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color.Gray)
+            ) {
+                // Load Bitmap from Uri
+                val bitmap = remember(capturedPhotoUri) {
+                    try {
+                        val inputStream = context.contentResolver.openInputStream(capturedPhotoUri!!)
+                        BitmapFactory.decodeStream(inputStream)
+                    } catch (e: Exception) {
+                        null
+                    }
+                }
+
+                if (bitmap != null) {
+                    Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = "Captured Photo",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+
+                IconButton(
+                    onClick = { capturedPhotoUri = null },
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(4.dp)
+                        .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(50))
+                ) {
+                    Text("✕", color = Color.White)
+                }
+            }
+        } else {
+            OutlinedButton(
+                onClick = { showCamera = true },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("📷 Take Photo")
+            }
+        }
+
         OutlinedTextField(
             value = messageText,
             onValueChange = { if (it.length <= 200) messageText = it },
@@ -169,7 +356,7 @@ fun PostCreationARScreen(
                             )
                             
                             // Upload to Firebase
-                            viewModel.uploadIssueSafely(anchorData)
+                            viewModel.uploadIssueSafely(anchorData, capturedPhotoUri)
                             
                             Toast.makeText(context, "Message posted!", Toast.LENGTH_SHORT).show()
                             
@@ -198,4 +385,5 @@ fun PostCreationARScreen(
             }
         }
     }
+}
 }

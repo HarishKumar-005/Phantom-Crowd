@@ -14,6 +14,9 @@ import com.phantomcrowd.utils.Logger
 import com.phantomcrowd.utils.NetworkHelper
 import com.google.firebase.firestore.FirebaseFirestore
 import com.phantomcrowd.utils.OfflineMapCache
+import android.net.Uri
+import com.google.firebase.storage.FirebaseStorage
+import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -337,13 +340,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * Phase F: Upload issue safely with error handling
      * Used by PostCreationARScreen for AR wall posting
      */
-    fun uploadIssueSafely(anchor: AnchorData) {
+    fun uploadIssueSafely(anchor: AnchorData, photoUri: Uri? = null) {
         viewModelScope.launch(exceptionHandler) {
             try {
                 _syncStatus.value = "Creating cloud anchor..."
                 Logger.d(Logger.Category.DATA, "Uploading AR wall message: ${anchor.id}")
                 
-                val result = firebaseManager.uploadIssue(anchor)
+                var anchorToUpload = anchor
+
+                // Upload photo if present
+                if (photoUri != null) {
+                    _syncStatus.value = "Uploading photo..."
+                    try {
+                        val photoUrl = uploadPhoto(photoUri, anchor.id)
+                        anchorToUpload = anchor.copy(photoUrl = photoUrl)
+                        Logger.d(Logger.Category.DATA, "Photo uploaded: $photoUrl")
+                    } catch (e: Exception) {
+                        Logger.e(Logger.Category.DATA, "Photo upload failed", e)
+                        // Continue uploading the issue without the photo or fail?
+                        // Deciding to fail since the user intended to upload a photo
+                        throw Exception("Photo upload failed: ${e.message}")
+                    }
+                }
+
+                val result = firebaseManager.uploadIssue(anchorToUpload)
                 result.onSuccess {
                     _syncStatus.value = "✅ Posted!"
                     Logger.i(Logger.Category.DATA, "AR message posted successfully: ${anchor.id}")
@@ -372,6 +392,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /**
      * Upvote an issue in cloud storage.
      */
+    private suspend fun uploadPhoto(uri: Uri, issueId: String): String {
+        val storageRef = FirebaseStorage.getInstance().reference
+        val photoRef = storageRef.child("issues/$issueId/photo.jpg")
+
+        photoRef.putFile(uri).await()
+        val downloadUrl = photoRef.downloadUrl.await()
+        return downloadUrl.toString()
+    }
+
     fun upvoteIssue(issueId: String) {
         viewModelScope.launch(exceptionHandler) {
             val result = firebaseManager.upvoteIssue(issueId)
