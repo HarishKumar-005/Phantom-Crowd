@@ -59,6 +59,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // Error state
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
+
+    private val _errorMessage = MutableStateFlow<String?>(null)
+    val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
     
     // Navigation Tab state (Phase 2)
     private val _selectedAnchor = MutableStateFlow<AnchorData?>(null)
@@ -86,6 +89,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val syncStatus: StateFlow<String> = _syncStatus.asStateFlow()
     
     private var cloudSyncJob: Job? = null
+    private var locationUpdatesJob: Job? = null
+    private var locationTimeoutJob: Job? = null
     
     // Phase B: Heatmap Visualization
     private val _showHeatmap = MutableStateFlow(false)
@@ -121,7 +126,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // Coroutine exception handler for graceful error handling
     private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
         Logger.e(Logger.Category.DATA, "Coroutine exception in ViewModel", throwable)
-        _error.value = throwable.message ?: "An error occurred"
+        val msg = throwable.message ?: "An unexpected error occurred"
+        _error.value = msg
+        _errorMessage.value = msg
         _isLoading.value = false
     }
 
@@ -170,16 +177,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         Logger.d(Logger.Category.GPS, "updateLocation() called")
         gpsUtils.startLocationUpdates()
 
-        viewModelScope.launch(exceptionHandler) {
-            gpsUtils.locationFlow.collect { location ->
-                Logger.d(Logger.Category.GPS, "ViewModel received location: $location")
-                _currentLocation.value = location
-                
-                if (location != null) {
+        // Cancel existing jobs to prevent stacking
+        locationUpdatesJob?.cancel()
+        locationTimeoutJob?.cancel()
+
+        // 1. Continuous location collection job
+        locationUpdatesJob = viewModelScope.launch(exceptionHandler) {
+            gpsUtils.locationFlow.collect { l ->
+                if (l != null) {
+                    Logger.d(Logger.Category.GPS, "ViewModel received location: $l")
+                    _currentLocation.value = l
+
                     // Update nearby list using 50m radius
                     val nearby = repository.getNearbyAnchors(
-                        location.latitude, 
-                        location.longitude, 
+                        l.latitude,
+                        l.longitude,
                         NEARBY_RADIUS_METERS
                     )
                     _anchors.value = nearby
@@ -188,6 +200,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     // Update all anchors for AR view
                     allAnchors.value = repository.getAllAnchors()
                 }
+            }
+        }
+
+        // 2. Timeout check job - only complains if we don't get a location within 30s
+        locationTimeoutJob = viewModelScope.launch(exceptionHandler) {
+            kotlinx.coroutines.delay(30_000L)
+            if (_currentLocation.value == null) {
+                _errorMessage.value = "GPS Timeout: Could not retrieve location. Please check your settings."
+                Logger.w(Logger.Category.GPS, "GPS Timeout waiting for location")
             }
         }
     }
@@ -201,6 +222,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 allAnchors.value = repository.getAllAnchors()
                 Logger.d(Logger.Category.DATA, "Loaded ${allAnchors.value.size} total anchors")
+            } catch (e: Exception) {
+                Logger.e(Logger.Category.DATA, "Failed to load anchors", e)
+                _errorMessage.value = "Failed to load data: ${e.message}"
             } finally {
                 _isLoading.value = false
             }
@@ -247,6 +271,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun clearError() {
         _error.value = null
+        _errorMessage.value = null
     }
 
     /**
@@ -267,20 +292,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun uploadIssueToCloud(anchor: AnchorData) {
         viewModelScope.launch(exceptionHandler) {
-            if (!_isOnline.value) {
-                _syncStatus.value = "Offline - will sync later"
-                return@launch
-            }
-            
-            _syncStatus.value = "Uploading..."
-            val result = firebaseManager.uploadIssue(anchor)
-            result.onSuccess {
-                _syncStatus.value = "Synced ✓"
-                Logger.i(Logger.Category.DATA, "Issue uploaded to cloud: ${anchor.id}")
-            }
-            result.onFailure { error ->
-                _syncStatus.value = "Sync failed"
-                Logger.e(Logger.Category.DATA, "Cloud upload error: ${error.message}", error)
+            try {
+                if (!_isOnline.value) {
+                    _syncStatus.value = "Offline - will sync later"
+                    return@launch
+                }
+
+                _syncStatus.value = "Uploading..."
+                val result = firebaseManager.uploadIssue(anchor)
+                result.onSuccess {
+                    _syncStatus.value = "Synced ✓"
+                    Logger.i(Logger.Category.DATA, "Issue uploaded to cloud: ${anchor.id}")
+                }
+                result.onFailure { error ->
+                    _syncStatus.value = "Sync failed"
+                    _errorMessage.value = "Failed to upload issue: ${error.message}"
+                    Logger.e(Logger.Category.DATA, "Cloud upload error: ${error.message}", error)
+                }
+            } catch (e: Exception) {
+                _syncStatus.value = "Sync error"
+                _errorMessage.value = "Upload error: ${e.message}"
+                Logger.e(Logger.Category.DATA, "Exception in uploadIssueToCloud", e)
             }
         }
     }
@@ -312,15 +344,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         cloudSyncJob?.cancel()
         
         cloudSyncJob = viewModelScope.launch(exceptionHandler) {
-            Logger.i(Logger.Category.DATA, "Starting cloud sync at ($latitude, $longitude)")
-            _syncStatus.value = "Syncing..."
-            
-            firebaseManager.getNearbyIssues(latitude, longitude, radiusKm = 5)
-                .collect { issues ->
-                    _cloudIssues.value = issues
-                    _syncStatus.value = "Synced ✓"
-                    Logger.d(Logger.Category.DATA, "Cloud sync: ${issues.size} issues received")
-                }
+            try {
+                Logger.i(Logger.Category.DATA, "Starting cloud sync at ($latitude, $longitude)")
+                _syncStatus.value = "Syncing..."
+
+                firebaseManager.getNearbyIssues(latitude, longitude, radiusKm = 5)
+                    .collect { issues ->
+                        _cloudIssues.value = issues
+                        _syncStatus.value = "Synced ✓"
+                        Logger.d(Logger.Category.DATA, "Cloud sync: ${issues.size} issues received")
+                    }
+            } catch (e: Exception) {
+                _syncStatus.value = "Sync error"
+                _errorMessage.value = "Failed to sync with cloud: ${e.message}"
+                Logger.e(Logger.Category.DATA, "Exception in startCloudSync", e)
+            }
         }
     }
     
@@ -337,35 +375,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * Phase F: Upload issue safely with error handling
      * Used by PostCreationARScreen for AR wall posting
      */
-    fun uploadIssueSafely(anchor: AnchorData) {
-        viewModelScope.launch(exceptionHandler) {
-            try {
-                _syncStatus.value = "Creating cloud anchor..."
-                Logger.d(Logger.Category.DATA, "Uploading AR wall message: ${anchor.id}")
+    suspend fun uploadIssueSafely(anchor: AnchorData): Result<Unit> {
+        return try {
+            _syncStatus.value = "Creating cloud anchor..."
+            Logger.d(Logger.Category.DATA, "Uploading AR wall message: ${anchor.id}")
+
+            val result = firebaseManager.uploadIssue(anchor)
+            if (result.isSuccess) {
+                _syncStatus.value = "✅ Posted!"
+                Logger.i(Logger.Category.DATA, "AR message posted successfully: ${anchor.id}")
                 
-                val result = firebaseManager.uploadIssue(anchor)
-                result.onSuccess {
-                    _syncStatus.value = "✅ Posted!"
-                    Logger.i(Logger.Category.DATA, "AR message posted successfully: ${anchor.id}")
-                    
-                    // Refresh anchors to show the new message
-                    _currentLocation.value?.let { location ->
-                        // Assuming refreshNearbyAnchors is a function that takes a location
-                        // and updates _anchors.value based on it.
-                        // This function is not present in the provided code snippet,
-                        // so I'm commenting it out or assuming it needs to be added elsewhere.
-                        // For now, I'll just call updateLocation() to refresh all data.
-                        updateLocation()
-                    }
-                }
-                result.onFailure { error ->
-                    _syncStatus.value = "❌ Error: ${error.message}"
-                    Logger.e(Logger.Category.DATA, "AR message upload failed", error)
-                }
-            } catch (e: Exception) {
-                _syncStatus.value = "❌ Error: ${e.message}"
-                Logger.e(Logger.Category.DATA, "Unexpected error in uploadIssueSafely", e)
+                // Refresh data
+                updateLocation()
+                Result.success(Unit)
+            } else {
+                val error = result.exceptionOrNull() ?: Exception("Unknown error")
+                _syncStatus.value = "❌ Error: ${error.message}"
+                Logger.e(Logger.Category.DATA, "AR message upload failed", error)
+                Result.failure(error)
             }
+        } catch (e: Exception) {
+            _syncStatus.value = "❌ Error: ${e.message}"
+            Logger.e(Logger.Category.DATA, "Unexpected error in uploadIssueSafely", e)
+            Result.failure(e)
         }
     }
 
@@ -374,12 +406,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun upvoteIssue(issueId: String) {
         viewModelScope.launch(exceptionHandler) {
-            val result = firebaseManager.upvoteIssue(issueId)
-            result.onSuccess {
-                Logger.i(Logger.Category.DATA, "Issue upvoted: $issueId")
-            }
-            result.onFailure { error ->
-                Logger.e(Logger.Category.DATA, "Upvote failed: ${error.message}", error)
+            try {
+                val result = firebaseManager.upvoteIssue(issueId)
+                result.onSuccess {
+                    Logger.i(Logger.Category.DATA, "Issue upvoted: $issueId")
+                }
+                result.onFailure { error ->
+                    _errorMessage.value = "Failed to upvote: ${error.message}"
+                    Logger.e(Logger.Category.DATA, "Upvote failed: ${error.message}", error)
+                }
+            } catch (e: Exception) {
+                _errorMessage.value = "Upvote error: ${e.message}"
+                Logger.e(Logger.Category.DATA, "Exception in upvoteIssue", e)
             }
         }
     }

@@ -35,18 +35,31 @@ fun PostCreationARScreen(
     
     val categories = listOf("General", "Infrastructure", "Safety", "Environment", "Other")
     val currentLocation by viewModel.currentLocation.collectAsState()
-    
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        Text(
-            "Post Message (Modern AR)",
-            style = MaterialTheme.typography.headlineMedium
-        )
+    val errorMessage by viewModel.errorMessage.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(errorMessage) {
+        errorMessage?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.clearError()
+        }
+    }
+
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) }
+    ) { paddingValues ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Text(
+                "Post Message (Modern AR)",
+                style = MaterialTheme.typography.headlineMedium
+            )
         
         Card(
             colors = CardDefaults.cardColors(
@@ -66,25 +79,33 @@ fun PostCreationARScreen(
             }
         }
         
-        Spacer(modifier = Modifier.height(8.dp))
-        
-        if (currentLocation == null) {
-            Text(
-                "📍 Getting location...",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.primary
-            )
-            LaunchedEffect(Unit) {
-                viewModel.updateLocation()
+            Spacer(modifier = Modifier.height(8.dp))
+
+            if (currentLocation == null) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        "📍 Getting location...",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    if (errorMessage?.contains("GPS") == true) {
+                        Button(onClick = { viewModel.updateLocation() }) {
+                            Text("Retry Location")
+                        }
+                    }
+                }
+                LaunchedEffect(Unit) {
+                    viewModel.updateLocation()
+                }
+            } else {
+                Text(
+                    "📍 Location: ${String.format("%.6f", currentLocation!!.latitude)}, ${String.format("%.6f", currentLocation!!.longitude)}",
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
-        } else {
-            Text(
-                "📍 Location: ${String.format("%.6f", currentLocation!!.latitude)}, ${String.format("%.6f", currentLocation!!.longitude)}",
-                style = MaterialTheme.typography.bodySmall
-            )
-        }
-        
-        OutlinedTextField(
+
+            OutlinedTextField(
             value = messageText,
             onValueChange = { if (it.length <= 200) messageText = it },
             label = { Text("Message") },
@@ -126,74 +147,80 @@ fun PostCreationARScreen(
             }
         }
         
-        Spacer(modifier = Modifier.weight(1f))
-        
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            OutlinedButton(
-                onClick = onCancel,
-                modifier = Modifier.weight(1f)
-            ) {
-                Text("Cancel")
-            }
+            Spacer(modifier = Modifier.weight(1f))
             
-            Button(
-                onClick = {
-                    if (messageText.isBlank()) {
-                        Toast.makeText(context, "Please enter a message", Toast.LENGTH_SHORT).show()
-                        return@Button
-                    }
-                    
-                    if (currentLocation == null) {
-                        Toast.makeText(context, "Location not available", Toast.LENGTH_SHORT).show()
-                        viewModel.updateLocation()
-                        return@Button
-                    }
-                    
-                    isPosting = true
-                    
-                    scope.launch {
-                        try {
-                            // Create anchor data
-                            val anchorData = AnchorData(
-                                id = UUID.randomUUID().toString(),
-                                latitude = currentLocation!!.latitude,
-                                longitude = currentLocation!!.longitude,
-                                altitude = 0.0,
-                                messageText = messageText,
-                                category = selectedCategory.lowercase(),
-                                timestamp = System.currentTimeMillis(),
-                                wallAnchorId = "wall-${UUID.randomUUID()}"
-                            )
-                            
-                            // Upload to Firebase
-                            viewModel.uploadIssueSafely(anchorData)
-                            
-                            Toast.makeText(context, "Message posted!", Toast.LENGTH_SHORT).show()
-                            
-                            // Wait a moment then navigate away
-                            kotlinx.coroutines.delay(500)
-                            onPostCreated()
-                            
-                        } catch (e: Exception) {
-                            Logger.e(Logger.Category.AR, "Post failed", e)
-                            isPosting = false
-                            Toast.makeText(context, "Failed: ${e.message}", Toast.LENGTH_LONG).show()
-                        }
-                    }
-                },
-                modifier = Modifier.weight(1f),
-                enabled = messageText.isNotBlank() && currentLocation != null && !isPosting
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                if (isPosting) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(16.dp),
-                        color = MaterialTheme.colorScheme.onPrimary
-                    )
-                } else {
-                    Text("Post Message")
+                OutlinedButton(
+                    onClick = onCancel,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Cancel")
+                }
+
+                Button(
+                    onClick = {
+                        if (messageText.isBlank()) {
+                            scope.launch { snackbarHostState.showSnackbar("Please enter a message") }
+                            return@Button
+                        }
+
+                        if (currentLocation == null) {
+                            scope.launch { snackbarHostState.showSnackbar("Location not available") }
+                            viewModel.updateLocation()
+                            return@Button
+                        }
+
+                        isPosting = true
+
+                        scope.launch {
+                            try {
+                                // Create anchor data
+                                val anchorData = AnchorData(
+                                    id = UUID.randomUUID().toString(),
+                                    latitude = currentLocation!!.latitude,
+                                    longitude = currentLocation!!.longitude,
+                                    altitude = 0.0,
+                                    messageText = messageText,
+                                    category = selectedCategory.lowercase(),
+                                    timestamp = System.currentTimeMillis(),
+                                    wallAnchorId = "wall-${UUID.randomUUID()}"
+                                )
+
+                                // Upload to Firebase and wait for result
+                                val result = viewModel.uploadIssueSafely(anchorData)
+
+                                if (result.isSuccess) {
+                                    snackbarHostState.showSnackbar("Message posted!")
+                                    // Wait a moment then navigate away
+                                    kotlinx.coroutines.delay(500)
+                                    onPostCreated()
+                                } else {
+                                    val error = result.exceptionOrNull()
+                                    isPosting = false
+                                    snackbarHostState.showSnackbar("Failed: ${error?.message ?: "Unknown error"}")
+                                }
+
+                            } catch (e: Exception) {
+                                Logger.e(Logger.Category.AR, "Post failed", e)
+                                isPosting = false
+                                snackbarHostState.showSnackbar("Failed: ${e.message}")
+                            }
+                        }
+                    },
+                    modifier = Modifier.weight(1f),
+                    enabled = messageText.isNotBlank() && currentLocation != null && !isPosting
+                ) {
+                    if (isPosting) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
+                    } else {
+                        Text("Post Message")
+                    }
                 }
             }
         }

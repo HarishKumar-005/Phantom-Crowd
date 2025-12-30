@@ -254,7 +254,8 @@ fun MainScreen(viewModel: MainViewModel) {
             ARNavigationScreen(
                 targetAnchor = selectedAnchor!!,
                 userLocation = currentLocation,
-                onClose = { showARNavigation = false }
+                onClose = { showARNavigation = false },
+                viewModel = viewModel
             )
         }
         
