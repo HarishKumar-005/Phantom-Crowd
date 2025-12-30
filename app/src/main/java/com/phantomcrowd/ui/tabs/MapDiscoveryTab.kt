@@ -132,7 +132,7 @@ fun MapDiscoveryTab(
                         val marker = Marker(map).apply {
                             position = GeoPoint(anchor.latitude, anchor.longitude)
                             title = anchor.messageText
-                            snippet = "${distance.toInt()}m away • ${anchor.category}"
+                            snippet = "${distance.toInt()}m away • ${anchor.category} • 👍 ${anchor.upvotes}"
                             setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
                             try {
                                 icon = createColoredMarkerDrawable(context, markerColor)

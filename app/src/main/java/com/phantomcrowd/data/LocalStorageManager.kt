@@ -20,6 +20,7 @@ class LocalStorageManager(private val context: Context) {
 
     private val gson = Gson()
     private val fileName = "anchors.json"
+    private val prefs = context.getSharedPreferences("user_prefs", Context.MODE_PRIVATE)
 
     // Wrapper class for JSON structure
     private data class AnchorListWrapper(val anchors: List<AnchorData>)
@@ -123,6 +124,20 @@ class LocalStorageManager(private val context: Context) {
      */
     suspend fun getAnchorCount(): Int {
         return loadAnchors().size
+    }
+
+    fun hasUpvoted(issueId: String): Boolean {
+        return prefs.getBoolean("upvoted_$issueId", false)
+    }
+
+    fun saveUpvote(issueId: String) {
+        prefs.edit().putBoolean("upvoted_$issueId", true).apply()
+    }
+
+    fun getUpvotedIds(): Set<String> {
+        return prefs.all.keys.filter { it.startsWith("upvoted_") }
+            .map { it.removePrefix("upvoted_") }
+            .toSet()
     }
 
     private fun saveList(list: List<AnchorData>) {
