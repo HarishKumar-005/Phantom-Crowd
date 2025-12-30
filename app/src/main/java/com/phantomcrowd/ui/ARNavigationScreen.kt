@@ -60,10 +60,25 @@ fun ARNavigationScreen(
     targetAnchor: AnchorData,
     userLocation: Location?,
     onClose: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    viewModel: MainViewModel? = null
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val snackbarHostState = remember { SnackbarHostState() }
+    val errorMessage by viewModel?.errorMessage?.collectAsState() ?: remember { mutableStateOf(null) }
+    var cameraError by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(errorMessage, cameraError) {
+        errorMessage?.let {
+            snackbarHostState.showSnackbar(it, duration = SnackbarDuration.Long)
+            viewModel?.clearError()
+        }
+        cameraError?.let {
+            snackbarHostState.showSnackbar("Camera Error: $it", duration = SnackbarDuration.Long)
+            cameraError = null
+        }
+    }
     
     // Voice guidance
     val voiceManager = remember { VoiceGuidanceManager(context) }
@@ -201,7 +216,10 @@ fun ARNavigationScreen(
                     scaleType = PreviewView.ScaleType.FILL_CENTER
                     
                     // Start camera
-                    startCamera(ctx, this, lifecycleOwner, cameraExecutor)
+                    startCamera(ctx, this, lifecycleOwner, cameraExecutor) { error ->
+                         Logger.e(Logger.Category.AR, "Camera error: $error")
+                         cameraError = error
+                    }
                 }
             }
         )
@@ -339,9 +357,23 @@ fun ARNavigationScreen(
                         color = Color.White,
                         fontSize = 18.sp
                     )
+
+                    if (errorMessage?.contains("GPS") == true) {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Button(onClick = { viewModel?.updateLocation() }) {
+                            Text("Retry")
+                        }
+                    }
                 }
             }
         }
+
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 16.dp)
+        )
     }
 }
 
@@ -352,7 +384,8 @@ private fun startCamera(
     context: Context,
     previewView: PreviewView,
     lifecycleOwner: LifecycleOwner,
-    executor: ExecutorService
+    executor: ExecutorService,
+    onError: (String) -> Unit
 ) {
     val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
     
@@ -372,6 +405,7 @@ private fun startCamera(
             Logger.d(Logger.Category.AR, "CameraX started successfully")
         } catch (e: Exception) {
             Logger.e(Logger.Category.AR, "CameraX start failed", e)
+            onError(e.message ?: "Camera init failed")
         }
     }, ContextCompat.getMainExecutor(context))
 }
