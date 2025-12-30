@@ -21,7 +21,11 @@ data class AnchorData(
     // Cloud persistence fields (Phase A)
     val geohash: String = "",  // For efficient location queries in Firestore
     val cloudAnchorId: String = "",  // For cloud AR anchor persistence
-    val upvotes: Int = 0  // Community validation count
+    val upvotes: Int = 0,  // Community validation count
+    // Phase F: Wall Overlay Posting
+    val photoUrl: String = "",  // Firebase Storage URL for photo attachment
+    val captureTime: Long = 0L,  // Photo capture timestamp
+    val wallAnchorId: String = ""  // Unique wall surface identifier
 )
 
 

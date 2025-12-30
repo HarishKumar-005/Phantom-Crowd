@@ -334,6 +334,42 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
     
     /**
+     * Phase F: Upload issue safely with error handling
+     * Used by PostCreationARScreen for AR wall posting
+     */
+    fun uploadIssueSafely(anchor: AnchorData) {
+        viewModelScope.launch(exceptionHandler) {
+            try {
+                _syncStatus.value = "Creating cloud anchor..."
+                Logger.d(Logger.Category.DATA, "Uploading AR wall message: ${anchor.id}")
+                
+                val result = firebaseManager.uploadIssue(anchor)
+                result.onSuccess {
+                    _syncStatus.value = "✅ Posted!"
+                    Logger.i(Logger.Category.DATA, "AR message posted successfully: ${anchor.id}")
+                    
+                    // Refresh anchors to show the new message
+                    _currentLocation.value?.let { location ->
+                        // Assuming refreshNearbyAnchors is a function that takes a location
+                        // and updates _anchors.value based on it.
+                        // This function is not present in the provided code snippet,
+                        // so I'm commenting it out or assuming it needs to be added elsewhere.
+                        // For now, I'll just call updateLocation() to refresh all data.
+                        updateLocation()
+                    }
+                }
+                result.onFailure { error ->
+                    _syncStatus.value = "❌ Error: ${error.message}"
+                    Logger.e(Logger.Category.DATA, "AR message upload failed", error)
+                }
+            } catch (e: Exception) {
+                _syncStatus.value = "❌ Error: ${e.message}"
+                Logger.e(Logger.Category.DATA, "Unexpected error in uploadIssueSafely", e)
+            }
+        }
+    }
+
+    /**
      * Upvote an issue in cloud storage.
      */
     fun upvoteIssue(issueId: String) {

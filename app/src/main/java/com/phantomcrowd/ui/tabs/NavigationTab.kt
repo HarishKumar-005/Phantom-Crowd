@@ -6,8 +6,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -16,6 +18,9 @@ import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -35,6 +40,7 @@ import com.phantomcrowd.utils.BearingCalculator
 /**
  * Navigation Guidance Tab with huge directional arrow.
  * Shows direction to target anchor, distance, progress, and arrival notification.
+ * Now includes AR Navigation button for camera-based arrow view!
  */
 @Composable
 fun NavigationTab(
@@ -43,7 +49,8 @@ fun NavigationTab(
     targetAnchor: AnchorData?,
     modifier: Modifier = Modifier,
     startLocationLat: Double = 0.0,
-    startLocationLon: Double = 0.0
+    startLocationLon: Double = 0.0,
+    onOpenARNavigation: () -> Unit = {} // NEW: Callback to open AR view
 ) {
     // No target selected - show instructions
     if (targetAnchor == null) {
@@ -169,7 +176,31 @@ fun NavigationTab(
                 tint = arrowColor
             )
 
-            Spacer(modifier = Modifier.height(40.dp))
+            Spacer(modifier = Modifier.height(20.dp))
+            
+            // AR Navigation Button - THE WOW MOMENT!
+            Button(
+                onClick = onOpenARNavigation,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF6200EE)
+                ),
+                modifier = Modifier.padding(horizontal = 32.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.PlayArrow,
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "🎯 Open AR Navigation",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
 
             // Distance + Direction text
             Text(

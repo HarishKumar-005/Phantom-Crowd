@@ -80,6 +80,9 @@ fun MainScreen(viewModel: MainViewModel) {
     val startLocationLat by viewModel.startLocationLat.collectAsState()
     val startLocationLon by viewModel.startLocationLon.collectAsState()
     
+    // AR Navigation overlay state (Phase G)
+    var showARNavigation by remember { mutableStateOf(false) }
+    
     val permissions = arrayOf(
         android.Manifest.permission.CAMERA,
         android.Manifest.permission.ACCESS_FINE_LOCATION,
@@ -146,7 +149,14 @@ fun MainScreen(viewModel: MainViewModel) {
         Surface(modifier = Modifier.padding(paddingValues)) {
             when(selectedTab) {
                 0 -> NearbyIssuesScreen(viewModel)
-                1 -> PostIssueScreen(viewModel)
+                1 -> PostCreationARScreen(
+                    viewModel = viewModel,
+                    onPostCreated = {
+                        selectedTab = 2 // Switch to Map tab
+                        viewModel.updateLocation() // Refresh issues
+                    },
+                    onCancel = { selectedTab = 0 } // Go to Nearby tab
+                )
                 2 -> {
                     // Map Tab with Heatmap controls
                     Column(modifier = Modifier.fillMaxSize()) {
@@ -225,13 +235,27 @@ fun MainScreen(viewModel: MainViewModel) {
                 }
                 3 -> NavigationTab(
                     userLocation = currentLocation,
-                    deviceHeading = 0f, // TODO: Get from ARCore when available
+                    deviceHeading = 0f, // Heading handled in AR screen
                     targetAnchor = selectedAnchor,
                     startLocationLat = startLocationLat,
-                    startLocationLon = startLocationLon
+                    startLocationLon = startLocationLon,
+                    onOpenARNavigation = {
+                        if (selectedAnchor != null) {
+                            showARNavigation = true
+                        }
+                    }
                 )
                 4 -> ARViewScreen(viewModel)
             }
+        }
+        
+        // AR Navigation Overlay (Phase G - WOW MOMENT!)
+        if (showARNavigation && selectedAnchor != null) {
+            ARNavigationScreen(
+                targetAnchor = selectedAnchor!!,
+                userLocation = currentLocation,
+                onClose = { showARNavigation = false }
+            )
         }
         
         // Network indicator (Phase E) - Overlay over entire scaffold
