@@ -12,6 +12,7 @@ import androidx.camera.core.CameraSelector
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -27,6 +28,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
@@ -152,6 +154,20 @@ fun ARNavigationScreen(
             delay(16) // ~60 FPS
         }
     }
+
+    // Pulse animation for close proximity
+    val pulseTransition = rememberInfiniteTransition(label = "Pulse")
+    val pulseScale by pulseTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = if (distance <= 50f) 1.2f else 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1000),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "PulseScale"
+    )
+
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     
     // Voice guidance logic
     LaunchedEffect(distance, hasSpokenStart) {
@@ -225,6 +241,7 @@ fun ARNavigationScreen(
         // Close button (top right)
         IconButton(
             onClick = {
+                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
                 voiceManager.stop()
                 onClose()
             },
@@ -285,6 +302,7 @@ fun ARNavigationScreen(
                 contentDescription = "Direction Arrow",
                 modifier = Modifier
                     .size(160.dp)
+                    .graphicsLayer(scaleX = pulseScale, scaleY = pulseScale)
                     .rotate(displayRotation),
                 tint = arrowColor
             )

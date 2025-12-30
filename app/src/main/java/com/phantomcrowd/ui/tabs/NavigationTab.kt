@@ -179,10 +179,14 @@ fun NavigationTab(
             Spacer(modifier = Modifier.height(20.dp))
             
             // AR Navigation Button - THE WOW MOMENT!
+            val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
             Button(
-                onClick = onOpenARNavigation,
+                onClick = {
+                    haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                    onOpenARNavigation()
+                },
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF6200EE)
+                    containerColor = MaterialTheme.colorScheme.primary
                 ),
                 modifier = Modifier.padding(horizontal = 32.dp)
             ) {
