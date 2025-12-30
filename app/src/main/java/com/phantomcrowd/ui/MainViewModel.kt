@@ -64,6 +64,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _selectedAnchor = MutableStateFlow<AnchorData?>(null)
     val selectedAnchor: StateFlow<AnchorData?> = _selectedAnchor.asStateFlow()
 
+    private val _upvotedIssueIds = MutableStateFlow<Set<String>>(emptySet())
+    val upvotedIssueIds: StateFlow<Set<String>> = _upvotedIssueIds.asStateFlow()
     
     private val _selectedCloudAnchorId = MutableStateFlow("")
     val selectedCloudAnchorId: StateFlow<String> = _selectedCloudAnchorId.asStateFlow()
@@ -128,6 +130,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     init {
         Logger.d(Logger.Category.UI, "MainViewModel initialized")
         loadAnchors()
+        _upvotedIssueIds.value = storageManager.getUpvotedIds()
         
         // Monitor network status (Phase E)
         NetworkHelper.networkStatusFlow(application)
@@ -373,10 +376,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * Upvote an issue in cloud storage.
      */
     fun upvoteIssue(issueId: String) {
+        if (_upvotedIssueIds.value.contains(issueId)) {
+            Logger.d(Logger.Category.UI, "Already upvoted issue: $issueId")
+            return
+        }
+
         viewModelScope.launch(exceptionHandler) {
             val result = firebaseManager.upvoteIssue(issueId)
             result.onSuccess {
                 Logger.i(Logger.Category.DATA, "Issue upvoted: $issueId")
+                storageManager.saveUpvote(issueId)
+                _upvotedIssueIds.value += issueId
+
+                // Optimistic UI update
+                val currentAnchors = _anchors.value
+                val updatedAnchors = currentAnchors.map { anchor ->
+                    if (anchor.id == issueId) {
+                        anchor.copy(upvotes = anchor.upvotes + 1)
+                    } else {
+                        anchor
+                    }
+                }
+                _anchors.value = updatedAnchors
             }
             result.onFailure { error ->
                 Logger.e(Logger.Category.DATA, "Upvote failed: ${error.message}", error)
