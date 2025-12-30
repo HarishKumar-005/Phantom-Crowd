@@ -1,6 +1,5 @@
 package com.phantomcrowd.utils
 
-import android.util.Log
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
@@ -40,8 +39,6 @@ object BearingCalculator {
         
         // Normalize to 0-360 range
         bearing = (bearing + 360) % 360
-        
-        Log.d(TAG, "Bearing from ($userLat, $userLon) to ($targetLat, $targetLon) = ${String.format("%.1f", bearing)}°")
         
         return bearing
     }

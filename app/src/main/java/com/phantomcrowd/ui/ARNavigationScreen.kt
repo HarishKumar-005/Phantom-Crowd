@@ -40,6 +40,7 @@ import com.phantomcrowd.ar.VoiceGuidanceManager
 import com.phantomcrowd.data.AnchorData
 import com.phantomcrowd.utils.BearingCalculator
 import com.phantomcrowd.utils.Logger
+import com.phantomcrowd.utils.PermissionHelper
 import kotlinx.coroutines.delay
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -63,6 +64,29 @@ fun ARNavigationScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+
+    // Check camera permission
+    if (!PermissionHelper.hasCameraPermission(context)) {
+        Box(
+            modifier = modifier.fillMaxSize().background(Color.Black),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = "Camera Permission Denied",
+                    color = Color.White,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(onClick = onClose) {
+                    Text("Close")
+                }
+            }
+        }
+        return
+    }
+
     val lifecycleOwner = LocalLifecycleOwner.current
     
     // Voice guidance
@@ -75,6 +99,9 @@ fun ARNavigationScreen(
     // Smooth rotation state
     var displayRotation by remember { mutableFloatStateOf(0f) }
     
+    // Camera Provider state
+    var cameraProvider by remember { mutableStateOf<ProcessCameraProvider?>(null) }
+
     // Navigation state
     var hasSpokenStart by remember { mutableStateOf(false) }
     var hasArrived by remember { mutableStateOf(false) }
@@ -119,6 +146,7 @@ fun ARNavigationScreen(
         
         onDispose {
             sensorManager.unregisterListener(sensorListener)
+            cameraProvider?.unbindAll()
             cameraExecutor.shutdown()
             voiceManager.shutdown()
         }
@@ -148,7 +176,7 @@ fun ARNavigationScreen(
     // Smooth rotation with lerp
     LaunchedEffect(targetRotation) {
         while (true) {
-            displayRotation = lerpAngle(displayRotation, targetRotation, 0.15f)
+            displayRotation = lerpAngle(displayRotation, targetRotation, 0.1f)
             delay(16) // ~60 FPS
         }
     }
@@ -201,7 +229,9 @@ fun ARNavigationScreen(
                     scaleType = PreviewView.ScaleType.FILL_CENTER
                     
                     // Start camera
-                    startCamera(ctx, this, lifecycleOwner, cameraExecutor)
+                    startCamera(ctx, this, lifecycleOwner, cameraExecutor) { provider ->
+                        cameraProvider = provider
+                    }
                 }
             }
         )
@@ -352,13 +382,15 @@ private fun startCamera(
     context: Context,
     previewView: PreviewView,
     lifecycleOwner: LifecycleOwner,
-    executor: ExecutorService
+    executor: ExecutorService,
+    onCameraProviderAvailable: (ProcessCameraProvider) -> Unit
 ) {
     val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
     
     cameraProviderFuture.addListener({
         try {
             val cameraProvider = cameraProviderFuture.get()
+            onCameraProviderAvailable(cameraProvider)
             
             val preview = Preview.Builder().build().also {
                 it.setSurfaceProvider(previewView.surfaceProvider)
