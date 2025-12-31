@@ -248,7 +248,13 @@ fun MainScreen(viewModel: MainViewModel) {
                         }
                     }
                 )
-                4 -> ARViewScreen(viewModel)
+                4 -> {
+                    // Only show ARViewScreen if AR Navigation overlay is NOT active
+                    // This prevents camera conflict between ARCore and CameraX
+                    if (!showARNavigation) {
+                        ARViewScreen(viewModel)
+                    }
+                }
             }
         }
         
