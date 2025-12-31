@@ -160,6 +160,66 @@ class FirebaseAnchorManager(private val firestore: FirebaseFirestore) {
             Result.failure(e)
         }
     }
+    
+    /**
+     * One-shot fetch of nearby issues (suspend, not Flow)
+     */
+    suspend fun getIssuesNearLocation(
+        latitude: Double,
+        longitude: Double,
+        radiusMeters: Double
+    ): List<AnchorData> = suspendCancellableCoroutine { continuation ->
+        val radiusKm = (radiusMeters / 1000.0).coerceAtLeast(1.0).toInt()
+        val nearbyGeohashes = GeohashingUtility.getNearbyGeohashes(latitude, longitude, radiusKm)
+        
+        Log.d(TAG, "One-shot fetch: searching ${nearbyGeohashes.size} geohash cells")
+        
+        if (nearbyGeohashes.isEmpty()) {
+            continuation.resume(emptyList())
+            return@suspendCancellableCoroutine
+        }
+        
+        firestore.collection(ISSUES_COLLECTION)
+            .whereIn("geohash", nearbyGeohashes)
+            .get()
+            .addOnSuccessListener { snapshot ->
+                try {
+                    val issues = snapshot.toObjects(AnchorData::class.java)
+                    Log.d(TAG, "One-shot: Found ${issues.size} nearby issues")
+                    continuation.resume(issues)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Parse error: ${e.message}")
+                    continuation.resume(emptyList())
+                }
+            }
+            .addOnFailureListener { e ->
+                Log.e(TAG, "Query failed: ${e.message}")
+                continuation.resume(emptyList())
+            }
+    }
+    
+    /**
+     * One-shot fetch of all issues (suspend, not Flow)
+     */
+    suspend fun fetchAllIssues(): List<AnchorData> = suspendCancellableCoroutine { continuation ->
+        firestore.collection(ISSUES_COLLECTION)
+            .orderBy("timestamp", Query.Direction.DESCENDING)
+            .get()
+            .addOnSuccessListener { snapshot ->
+                try {
+                    val issues = snapshot.toObjects(AnchorData::class.java)
+                    Log.d(TAG, "One-shot: Loaded ${issues.size} total issues")
+                    continuation.resume(issues)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Parse error: ${e.message}")
+                    continuation.resume(emptyList())
+                }
+            }
+            .addOnFailureListener { e ->
+                Log.e(TAG, "Query failed: ${e.message}")
+                continuation.resume(emptyList())
+            }
+    }
 }
 
 // Extension function for Firebase Task to coroutine

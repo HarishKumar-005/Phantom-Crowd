@@ -30,7 +30,6 @@ import kotlinx.coroutines.launch
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val storageManager = LocalStorageManager(application)
-    private val repository = AnchorRepository(storageManager)
     private val gpsUtils = GPSUtils(application)
     private val geofenceManager = GeofenceManager(application)
     private val offlineCache = OfflineMapCache(application)
@@ -40,6 +39,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     
     // Firebase cloud sync (Phase A)
     private val firebaseManager = FirebaseAnchorManager(FirebaseFirestore.getInstance())
+    
+    // Repository now uses both local and cloud storage
+    private val repository = AnchorRepository(storageManager, firebaseManager)
 
     // Nearby anchors (within radius) for the Nearby screen
     private val _anchors = MutableStateFlow<List<AnchorData>>(emptyList())
