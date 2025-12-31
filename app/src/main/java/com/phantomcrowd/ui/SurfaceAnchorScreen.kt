@@ -53,6 +53,7 @@ fun SurfaceAnchorScreen(
     onCancel: () -> Unit
 ) {
     val context = LocalContext.current
+    val androidView = androidx.compose.ui.platform.LocalView.current // For screen dimensions
     val scope = rememberCoroutineScope()
     
     // Handle system back button - close overlay properly
@@ -142,9 +143,8 @@ fun SurfaceAnchorScreen(
                     shouldPlaceAnchor = false
                     
                     try {
-                        // Perform hit test at screen center
-                        val viewAsView = view as android.view.View
-                        val hitResults = frame.hitTest(viewAsView.width.toFloat() / 2f, viewAsView.height.toFloat() / 2f)
+                        // Perform hit test at screen center using Android View dimensions
+                        val hitResults = frame.hitTest(androidView.width.toFloat() / 2f, androidView.height.toFloat() / 2f)
                         val hit = hitResults.firstOrNull { 
                             val trackable = it.trackable
                             trackable is Plane && trackable.isPoseInPolygon(it.hitPose) 
