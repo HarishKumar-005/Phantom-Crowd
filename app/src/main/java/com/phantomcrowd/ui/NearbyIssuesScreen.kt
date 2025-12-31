@@ -112,7 +112,7 @@ fun NearbyIssuesScreen(viewModel: MainViewModel) {
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(anchors) { anchor ->
-                        IssueCard(anchor)
+                        IssueCard(anchor = anchor, viewModel = viewModel)
                     }
                 }
             }
@@ -121,9 +121,20 @@ fun NearbyIssuesScreen(viewModel: MainViewModel) {
 }
 
 @Composable
-fun IssueCard(anchor: com.phantomcrowd.data.AnchorData) {
+fun IssueCard(
+    anchor: com.phantomcrowd.data.AnchorData,
+    viewModel: MainViewModel? = null,
+    onNavigate: (() -> Unit)? = null
+) {
     val date = Date(anchor.timestamp)
     val formattedDate = SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault()).format(date)
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val context = androidx.compose.ui.platform.LocalContext.current
+    
+    // Track if user already upvoted this issue
+    val prefs = context.getSharedPreferences("upvotes", android.content.Context.MODE_PRIVATE)
+    var hasUpvoted by remember { mutableStateOf(prefs.getBoolean(anchor.id, false)) }
+    var localUpvotes by remember { mutableIntStateOf(anchor.upvotes) }
     
     // Fade in animation
     val alpha = remember { Animatable(0f) }
@@ -143,10 +154,71 @@ fun IssueCard(anchor: com.phantomcrowd.data.AnchorData) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(anchor.messageText, style = MaterialTheme.typography.titleMedium)
             Spacer(modifier = Modifier.height(4.dp))
-            Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                Text(anchor.category, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-                Text(formattedDate, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+            Row(
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                // Category and date
+                Column {
+                    Text(
+                        anchor.category,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        formattedDate,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.Gray
+                    )
+                }
+                
+                // Actions row
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                ) {
+                    // Upvote button
+                    FilledTonalButton(
+                        onClick = {
+                            if (!hasUpvoted) {
+                                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                viewModel?.upvoteIssue(anchor.id)
+                                hasUpvoted = true
+                                localUpvotes++
+                                prefs.edit().putBoolean(anchor.id, true).apply()
+                            }
+                        },
+                        enabled = !hasUpvoted,
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = if (hasUpvoted) 
+                                MaterialTheme.colorScheme.primaryContainer 
+                            else 
+                                MaterialTheme.colorScheme.secondaryContainer
+                        ),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            if (hasUpvoted) "👍 $localUpvotes" else "👍 $localUpvotes",
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                    }
+                    
+                    // Navigate button (if callback provided)
+                    if (onNavigate != null) {
+                        FilledTonalButton(
+                            onClick = {
+                                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                onNavigate()
+                            },
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                        ) {
+                            Text("🧭 Navigate", style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+                }
             }
         }
     }
 }
+

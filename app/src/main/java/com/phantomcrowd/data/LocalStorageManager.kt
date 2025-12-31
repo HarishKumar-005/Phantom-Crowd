@@ -158,4 +158,105 @@ class LocalStorageManager(private val context: Context) {
             }
         }
     }
+    
+    // ==================== OFFLINE QUEUE SYNC (Task 7) ====================
+    
+    private val pendingUploadsFileName = "pending_uploads.json"
+    
+    private fun getPendingUploadsFile(): File {
+        return File(context.filesDir, pendingUploadsFileName)
+    }
+    
+    /**
+     * Queue an anchor for upload when network is available.
+     * Used when user creates an issue while offline.
+     */
+    suspend fun queuePendingUpload(anchor: AnchorData) {
+        withContext(Dispatchers.IO) {
+            try {
+                val currentQueue = loadPendingUploads().toMutableList()
+                currentQueue.add(anchor)
+                savePendingUploads(currentQueue)
+                Logger.d(Logger.Category.DATA, "Queued pending upload: ${anchor.id} (${currentQueue.size} total)")
+            } catch (e: Exception) {
+                Logger.e(Logger.Category.DATA, "Failed to queue pending upload: ${anchor.id}", e)
+            }
+        }
+    }
+    
+    /**
+     * Get all pending uploads.
+     */
+    suspend fun loadPendingUploads(): List<AnchorData> {
+        return withContext(Dispatchers.IO) {
+            val file = getPendingUploadsFile()
+            
+            if (!file.exists()) {
+                return@withContext emptyList()
+            }
+            
+            try {
+                FileReader(file).use { reader ->
+                    val type = object : TypeToken<AnchorListWrapper>() {}.type
+                    val wrapper: AnchorListWrapper? = gson.fromJson(reader, type)
+                    wrapper?.anchors ?: emptyList()
+                }
+            } catch (e: Exception) {
+                Logger.e(Logger.Category.DATA, "Error loading pending uploads", e)
+                emptyList()
+            }
+        }
+    }
+    
+    /**
+     * Remove a successfully uploaded anchor from the pending queue.
+     */
+    suspend fun removePendingUpload(anchorId: String) {
+        withContext(Dispatchers.IO) {
+            try {
+                val currentQueue = loadPendingUploads().filter { it.id != anchorId }
+                savePendingUploads(currentQueue)
+                Logger.d(Logger.Category.DATA, "Removed from pending queue: $anchorId")
+            } catch (e: Exception) {
+                Logger.e(Logger.Category.DATA, "Failed to remove from pending queue: $anchorId", e)
+            }
+        }
+    }
+    
+    /**
+     * Get count of pending uploads.
+     */
+    suspend fun getPendingUploadCount(): Int {
+        return loadPendingUploads().size
+    }
+    
+    /**
+     * Clear all pending uploads (after successful sync).
+     */
+    suspend fun clearPendingUploads() {
+        withContext(Dispatchers.IO) {
+            try {
+                val file = getPendingUploadsFile()
+                if (file.exists()) {
+                    file.delete()
+                    Logger.d(Logger.Category.DATA, "Cleared all pending uploads")
+                }
+            } catch (e: Exception) {
+                Logger.e(Logger.Category.DATA, "Failed to clear pending uploads", e)
+            }
+        }
+    }
+    
+    private fun savePendingUploads(list: List<AnchorData>) {
+        try {
+            val file = getPendingUploadsFile()
+            val wrapper = AnchorListWrapper(list)
+            FileWriter(file).use { writer ->
+                gson.toJson(wrapper, writer)
+            }
+        } catch (e: Exception) {
+            Logger.e(Logger.Category.DATA, "Error writing pending uploads file", e)
+        }
+    }
 }
+
