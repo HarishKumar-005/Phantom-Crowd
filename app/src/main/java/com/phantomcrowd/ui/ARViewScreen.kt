@@ -12,7 +12,6 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
@@ -39,8 +38,6 @@ import com.phantomcrowd.utils.Logger
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import kotlin.math.abs
-import kotlin.math.cos
-import kotlin.math.sin
 
 /**
  * ARViewScreen - Simplified AR View with CameraX and Overlay Labels
@@ -50,6 +47,7 @@ import kotlin.math.sin
  * - Floating labels for nearby issues based on GPS bearing
  * - Real-time compass heading for label positioning
  * - Distance-based label sizing
+ * - OPTIMIZED: Throttled sensor updates to prevent performance issues
  */
 @Composable
 fun ARViewScreen(
@@ -65,8 +63,9 @@ fun ARViewScreen(
     val userLocation by viewModel.currentLocation.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     
-    // Compass heading
+    // Compass heading - THROTTLED to prevent excessive recompositions
     var deviceHeading by remember { mutableFloatStateOf(0f) }
+    var lastUpdateTime by remember { mutableLongStateOf(0L) }
     val sensorManager = remember { context.getSystemService(Context.SENSOR_SERVICE) as SensorManager }
     
     // Camera executor
@@ -74,21 +73,55 @@ fun ARViewScreen(
     var cameraReady by remember { mutableStateOf(false) }
     var cameraError by remember { mutableStateOf<String?>(null) }
     
-    // Compass sensor listener
+    // Pre-calculate anchor bearings and distances (only when location or anchors change)
+    val anchorData = remember(userLocation, anchors) {
+        if (userLocation == null) emptyList()
+        else anchors.map { anchor ->
+            val bearing = BearingCalculator.calculateBearing(
+                userLocation!!.latitude, userLocation!!.longitude,
+                anchor.latitude, anchor.longitude
+            ).toFloat()
+            
+            val distance = FloatArray(1)
+            Location.distanceBetween(
+                userLocation!!.latitude, userLocation!!.longitude,
+                anchor.latitude, anchor.longitude,
+                distance
+            )
+            
+            AnchorDisplayData(anchor, bearing, distance[0])
+        }.sortedBy { it.distance }
+    }
+    
+    // Compass sensor listener - THROTTLED
     DisposableEffect(sensorManager) {
         val rotationSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
+        var lastHeading = 0f
         
         val sensorListener = object : SensorEventListener {
             private val rotationMatrix = FloatArray(9)
             private val orientationAngles = FloatArray(3)
             
             override fun onSensorChanged(event: SensorEvent) {
+                val currentTime = System.currentTimeMillis()
+                
+                // Throttle to max 10 updates per second (100ms)
+                if (currentTime - lastUpdateTime < 100) return
+                
                 SensorManager.getRotationMatrixFromVector(rotationMatrix, event.values)
                 SensorManager.getOrientation(rotationMatrix, orientationAngles)
                 
                 // Convert to degrees (0-360)
                 val azimuth = Math.toDegrees(orientationAngles[0].toDouble()).toFloat()
-                deviceHeading = (azimuth + 360) % 360
+                val newHeading = (azimuth + 360) % 360
+                
+                // Only update if heading changed by more than 3 degrees
+                val headingDiff = abs(newHeading - lastHeading)
+                if (headingDiff > 3 || headingDiff > 357) { // Handle wrap-around
+                    deviceHeading = newHeading
+                    lastHeading = newHeading
+                    lastUpdateTime = currentTime
+                }
             }
             
             override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
@@ -98,7 +131,7 @@ fun ARViewScreen(
             sensorManager.registerListener(
                 sensorListener,
                 rotationSensor,
-                SensorManager.SENSOR_DELAY_UI
+                SensorManager.SENSOR_DELAY_GAME // Faster updates, but we throttle manually
             )
         }
         
@@ -129,59 +162,49 @@ fun ARViewScreen(
             modifier = Modifier.fillMaxSize()
         )
         
-        // Issue Labels Overlay
-        if (userLocation != null && anchors.isNotEmpty()) {
-            // Calculate which issues are in view based on heading
-            val visibleAnchors = anchors.mapNotNull { anchor ->
-                val bearing = BearingCalculator.calculateBearing(
-                    userLocation!!.latitude, userLocation!!.longitude,
-                    anchor.latitude, anchor.longitude
-                ).toFloat()
-                
-                // Calculate angle difference from current heading
-                var angleDiff = bearing - deviceHeading
-                if (angleDiff > 180) angleDiff -= 360
-                if (angleDiff < -180) angleDiff += 360
-                
-                // Only show issues within ±60° field of view
-                if (abs(angleDiff) <= 60) {
-                    val distance = FloatArray(1)
-                    Location.distanceBetween(
-                        userLocation!!.latitude, userLocation!!.longitude,
-                        anchor.latitude, anchor.longitude,
-                        distance
-                    )
-                    Triple(anchor, angleDiff, distance[0])
-                } else null
-            }.sortedBy { it.third } // Sort by distance
+        // Issue Labels Overlay - Uses pre-calculated data
+        if (anchorData.isNotEmpty()) {
+            val visibleAnchors = remember(deviceHeading, anchorData) {
+                anchorData.mapNotNull { data ->
+                    // Calculate angle difference from current heading
+                    var angleDiff = data.bearing - deviceHeading
+                    if (angleDiff > 180) angleDiff -= 360
+                    if (angleDiff < -180) angleDiff += 360
+                    
+                    // Only show issues within ±60° field of view
+                    if (abs(angleDiff) <= 60) {
+                        VisibleAnchor(data.anchor, angleDiff, data.distance)
+                    } else null
+                }
+            }
             
-            // Draw labels
-            visibleAnchors.take(5).forEach { (anchor, angleDiff, distance) ->
+            // Draw labels - max 5
+            visibleAnchors.take(5).forEachIndexed { index, visible ->
                 // Position label based on angle (center = 0, left = -60, right = +60)
-                val xOffset = angleDiff / 60f // -1 to +1
+                val xOffset = visible.angleDiff / 60f // -1 to +1
                 
                 // Size based on distance (closer = bigger)
                 val scale = when {
-                    distance < 20 -> 1.3f
-                    distance < 50 -> 1.1f
-                    distance < 100 -> 1.0f
-                    distance < 200 -> 0.9f
+                    visible.distance < 20 -> 1.3f
+                    visible.distance < 50 -> 1.1f
+                    visible.distance < 100 -> 1.0f
+                    visible.distance < 200 -> 0.9f
                     else -> 0.8f
                 }
                 
                 // Color based on category
-                val labelColor = when (anchor.category.lowercase()) {
+                val labelColor = when (visible.anchor.category.lowercase()) {
                     "safety" -> Color(0xFFE53935)  // Red
                     "facility" -> Color(0xFF1E88E5)  // Blue
                     else -> Color(0xFF43A047)  // Green
                 }
                 
                 // Vertical position based on index (stack labels)
-                val yPosition = 0.3f + (visibleAnchors.indexOf(Triple(anchor, angleDiff, distance)) * 0.12f)
+                val yPosition = 0.3f + (index * 0.12f)
                 
                 IssueLabel(
-                    anchor = anchor,
-                    distance = distance,
+                    anchor = visible.anchor,
+                    distance = visible.distance,
                     xOffset = xOffset,
                     yPosition = yPosition,
                     scale = scale,
@@ -298,6 +321,19 @@ fun ARViewScreen(
         }
     }
 }
+
+// Data classes for caching calculations
+private data class AnchorDisplayData(
+    val anchor: AnchorData,
+    val bearing: Float,
+    val distance: Float
+)
+
+private data class VisibleAnchor(
+    val anchor: AnchorData,
+    val angleDiff: Float,
+    val distance: Float
+)
 
 /**
  * Floating issue label composable
