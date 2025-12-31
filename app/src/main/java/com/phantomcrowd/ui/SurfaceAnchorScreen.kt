@@ -55,6 +55,11 @@ fun SurfaceAnchorScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     
+    // Handle system back button - close overlay properly
+    androidx.activity.compose.BackHandler(enabled = true) {
+        onCancel()
+    }
+    
     // AR state
     var arSessionReady by remember { mutableStateOf(false) }
     var planesDetected by remember { mutableIntStateOf(0) }

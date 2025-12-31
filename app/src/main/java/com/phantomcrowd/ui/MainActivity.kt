@@ -135,8 +135,8 @@ fun MainScreen(viewModel: MainViewModel) {
     
     Scaffold(
         bottomBar = {
-            // Hide bottom navigation when AR Navigation overlay is active
-            if (!showARNavigation) {
+            // Hide bottom navigation when AR Navigation overlay OR Surface Anchor overlay is active
+            if (!showARNavigation && !showSurfaceAnchorScreen) {
                 NavigationBar {
                     tabs.forEachIndexed { index, title ->
                         NavigationBarItem(
@@ -151,7 +151,12 @@ fun MainScreen(viewModel: MainViewModel) {
                             },
                             label = { Text(title) },
                             selected = selectedTab == index,
-                            onClick = { selectedTab = index }
+                            onClick = { 
+                                // Close any open overlays when switching tabs
+                                showSurfaceAnchorScreen = false
+                                showARNavigation = false
+                                selectedTab = index 
+                            }
                         )
                     }
                 }
@@ -264,10 +269,21 @@ fun MainScreen(viewModel: MainViewModel) {
                     }
                 )
                 4 -> {
-                    // Only show ARViewScreen if AR Navigation overlay is NOT active
-                    // This prevents camera conflict between ARCore and CameraX
-                    if (!showARNavigation) {
+                    // Only show ARViewScreen if no overlays are active
+                    // This prevents camera conflict between ARCore sessions
+                    if (!showARNavigation && !showSurfaceAnchorScreen) {
                         ARViewScreen(viewModel)
+                    } else {
+                        // Show placeholder when camera is in use by overlay
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                "📸 Camera in use by AR placement",
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                        }
                     }
                 }
             }
