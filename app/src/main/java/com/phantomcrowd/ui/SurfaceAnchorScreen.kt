@@ -69,6 +69,7 @@ fun SurfaceAnchorScreen(
     // Placement state
     var bestPlane by remember { mutableStateOf<Plane?>(null) }
     var isPlacing by remember { mutableStateOf(false) }
+    var shouldPlaceAnchor by remember { mutableStateOf(false) }
     var placementSuccess by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     
@@ -134,6 +135,98 @@ fun SurfaceAnchorScreen(
                 } else {
                     bestPlane = null
                     planeStableTime = 0L
+                }
+
+                // Handle synchronized placement (runs safely in frame loop)
+                if (shouldPlaceAnchor) {
+                    shouldPlaceAnchor = false
+                    
+                    try {
+                        // Perform hit test at screen center
+                        val viewAsView = view as android.view.View
+                        val hitResults = frame.hitTest(viewAsView.width.toFloat() / 2f, viewAsView.height.toFloat() / 2f)
+                        val hit = hitResults.firstOrNull { 
+                            val trackable = it.trackable
+                            trackable is Plane && trackable.isPoseInPolygon(it.hitPose) 
+                        }
+
+                        if (hit != null && userLocation != null) {
+                            val hitPose = hit.hitPose
+                            val plane = hit.trackable as Plane
+
+                            // Extract data safely
+                            val zAxis = hitPose.zAxis
+                            val surfaceNormal = floatArrayOf(zAxis[0], zAxis[1], zAxis[2])
+                            
+                            val translation = hitPose.translation
+                            val offset = Triple(translation[0], translation[1], translation[2])
+                            
+                            // Safe non-null access for closure
+                            val location = userLocation
+                            
+                            val anchor = SurfaceAnchor(
+                                messageText = messageText,
+                                category = category,
+                                latitude = location.latitude,
+                                longitude = location.longitude,
+                                geohash = com.phantomcrowd.utils.GeohashingUtility.encode(
+                                    location.latitude, location.longitude
+                                ),
+                                relativeOffsetX = offset.first,
+                                relativeOffsetY = offset.second,
+                                relativeOffsetZ = offset.third,
+                                planeType = plane.type.name,
+                                surfaceNormalX = surfaceNormal[0],
+                                surfaceNormalY = surfaceNormal[1],
+                                surfaceNormalZ = surfaceNormal[2],
+                                timestamp = System.currentTimeMillis()
+                            )
+                            
+                            placementSuccess = true
+                            scope.launch {
+                                delay(800)
+                                onAnchorPlaced(anchor)
+                            }
+                        } else {
+                            // If hit test fails, fallback to bestPlane centerPose (defensive)
+                            val plane = bestPlane
+                            if (plane != null && plane.trackingState == TrackingState.TRACKING && userLocation != null) {
+                                val hitPose = plane.centerPose
+                                val offset = SurfaceAnchorManager.calculateOffset(hitPose)
+                                val location = userLocation
+                                
+                                val anchor = SurfaceAnchor(
+                                    messageText = messageText,
+                                    category = category,
+                                    latitude = location.latitude,
+                                    longitude = location.longitude,
+                                    geohash = com.phantomcrowd.utils.GeohashingUtility.encode(
+                                        location.latitude, location.longitude
+                                    ),
+                                    relativeOffsetX = offset.first,
+                                    relativeOffsetY = offset.second,
+                                    relativeOffsetZ = offset.third,
+                                    planeType = plane.type.name,
+                                    surfaceNormalX = hitPose.zAxis[0],
+                                    surfaceNormalY = hitPose.zAxis[1],
+                                    surfaceNormalZ = hitPose.zAxis[2],
+                                    timestamp = System.currentTimeMillis()
+                                )
+                                placementSuccess = true
+                                scope.launch {
+                                    delay(800)
+                                    onAnchorPlaced(anchor)
+                                }
+                            } else {
+                                errorMessage = "Could not place here - try moving closer"
+                                isPlacing = false
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Logger.e(Logger.Category.AR, "Placement error in frame loop", e)
+                        errorMessage = "Error: ${e.message}"
+                        isPlacing = false
+                    }
                 }
             },
             onTrackingFailureChanged = { reason ->
@@ -376,109 +469,7 @@ fun SurfaceAnchorScreen(
                     if (!isPlacing && userLocation != null) {
                         isPlacing = true
                         errorMessage = null
-                        
-                        // Robust placement with defensive checks
-                        val placementResult = try {
-                            // Step 1: Validate bestPlane exists and is still tracking
-                            val plane = bestPlane
-                            if (plane == null) {
-                                errorMessage = "No surface detected - point camera at a flat surface"
-                                isPlacing = false
-                                return@Button
-                            }
-                            
-                            // Step 2: Check plane is still actively tracking
-                            if (plane.trackingState != TrackingState.TRACKING) {
-                                errorMessage = "Surface lost - please rescan"
-                                isPlacing = false
-                                return@Button
-                            }
-                            
-                            // Step 3: Safely get plane pose with try-catch for ARCore native errors
-                            val hitPose: Pose = try {
-                                plane.centerPose
-                            } catch (e: Exception) {
-                                Logger.w(Logger.Category.AR, "Failed to get plane centerPose: ${e.message}")
-                                errorMessage = "Surface unstable - please try again"
-                                isPlacing = false
-                                return@Button
-                            }
-                            
-                            // Step 4: Validate plane size
-                            val extentX = try { plane.extentX } catch (e: Exception) { 0f }
-                            val extentZ = try { plane.extentZ } catch (e: Exception) { 0f }
-                            val extent = extentX.coerceAtMost(extentZ)
-                            
-                            if (extent < 0.15f) {
-                                errorMessage = "Surface too small - find a larger area"
-                                isPlacing = false
-                                return@Button
-                            }
-                            
-                            // Step 5: Safely extract pose data
-                            val zAxis = try { hitPose.zAxis } catch (e: Exception) { floatArrayOf(0f, 0f, 1f) }
-                            val surfaceNormal = floatArrayOf(
-                                zAxis.getOrElse(0) { 0f },
-                                zAxis.getOrElse(1) { 0f },
-                                zAxis.getOrElse(2) { 1f }
-                            )
-                            
-                            // Step 6: Calculate offset using safe pose translation
-                            val translation = try { hitPose.translation } catch (e: Exception) { floatArrayOf(0f, 0f, 0f) }
-                            val offset = Triple(
-                                translation.getOrElse(0) { 0f },
-                                translation.getOrElse(1) { 0f },
-                                translation.getOrElse(2) { 0f }
-                            )
-                            
-                            // Step 7: Get plane type safely
-                            val planeTypeName = try { plane.type.name } catch (e: Exception) { "HORIZONTAL_UPWARD_FACING" }
-                            
-                            // Step 8: Create anchor data
-                            val anchor = SurfaceAnchor(
-                                messageText = messageText,
-                                category = category,
-                                latitude = userLocation.latitude,
-                                longitude = userLocation.longitude,
-                                geohash = com.phantomcrowd.utils.GeohashingUtility.encode(
-                                    userLocation.latitude, userLocation.longitude
-                                ),
-                                relativeOffsetX = offset.first,
-                                relativeOffsetY = offset.second,
-                                relativeOffsetZ = offset.third,
-                                planeType = planeTypeName,
-                                surfaceNormalX = surfaceNormal[0],
-                                surfaceNormalY = surfaceNormal[1],
-                                surfaceNormalZ = surfaceNormal[2],
-                                timestamp = System.currentTimeMillis()
-                            )
-                            
-                            Logger.i(Logger.Category.AR, "Created anchor at offset (${offset.first}, ${offset.second}, ${offset.third})")
-                            anchor // Return the anchor as success
-                            
-                        } catch (e: android.os.DeadObjectException) {
-                            Logger.e(Logger.Category.AR, "ARCore session died", e)
-                            errorMessage = "AR session error - please restart"
-                            null
-                        } catch (e: IllegalStateException) {
-                            Logger.e(Logger.Category.AR, "ARCore illegal state", e)
-                            errorMessage = "AR state error - please try again"
-                            null
-                        } catch (e: Exception) {
-                            Logger.e(Logger.Category.AR, "Placement failed", e)
-                            errorMessage = "Placement failed: ${e.message ?: "Unknown error"}"
-                            null
-                        }
-                        
-                        if (placementResult != null) {
-                            placementSuccess = true
-                            scope.launch {
-                                delay(800)
-                                onAnchorPlaced(placementResult)
-                            }
-                        } else {
-                            isPlacing = false
-                        }
+                        shouldPlaceAnchor = true // Trigger placement in next frame
                     }
                 },
                 enabled = planesDetected > 0 && !isPlacing && !placementSuccess && userLocation != null,
