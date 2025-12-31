@@ -1,54 +1,55 @@
 package com.phantomcrowd.ui
 
+import android.content.Context
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.location.Location
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.google.ar.core.Config
-import com.google.ar.core.Frame
-import com.google.ar.core.Plane
-import com.google.ar.core.TrackingFailureReason
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.LifecycleOwner
 import com.phantomcrowd.data.AnchorData
 import com.phantomcrowd.utils.BearingCalculator
 import com.phantomcrowd.utils.Logger
-import io.github.sceneview.ar.ARScene
-import io.github.sceneview.ar.rememberARCameraStream
-import io.github.sceneview.loaders.MaterialLoader
-import io.github.sceneview.loaders.ModelLoader
-import io.github.sceneview.model.ModelInstance
-import io.github.sceneview.node.ModelNode
-import io.github.sceneview.rememberCollisionSystem
-import io.github.sceneview.rememberEngine
-import io.github.sceneview.rememberMaterialLoader
-import io.github.sceneview.rememberModelLoader
-import io.github.sceneview.rememberNodes
-import io.github.sceneview.rememberView
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.sin
 
 /**
- * ARViewScreen - Production-ready AR View with SceneView 2.3.1
+ * ARViewScreen - Simplified AR View with CameraX and Overlay Labels
  * 
  * Features:
- * - Full AR camera feed via ARScene composable
- * - Plane detection visualization
- * - 3D markers for nearby issues
- * - Real-time tracking state feedback
- * - Distance-based marker colors
+ * - CameraX camera preview (no ARCore conflicts!)
+ * - Floating labels for nearby issues based on GPS bearing
+ * - Real-time compass heading for label positioning
+ * - Distance-based label sizing
  */
 @Composable
 fun ARViewScreen(
@@ -56,150 +57,166 @@ fun ARViewScreen(
     onClose: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val haptic = LocalHapticFeedback.current
     
     // Collect state
     val anchors by viewModel.anchors.collectAsState()
     val userLocation by viewModel.currentLocation.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     
-    // AR state
-    var trackingFailureReason by remember { mutableStateOf<TrackingFailureReason?>(null) }
-    var planesDetected by remember { mutableIntStateOf(0) }
-    var arSessionReady by remember { mutableStateOf(false) }
+    // Compass heading
+    var deviceHeading by remember { mutableFloatStateOf(0f) }
+    val sensorManager = remember { context.getSystemService(Context.SENSOR_SERVICE) as SensorManager }
     
-    // Haptic feedback
-    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    // Camera executor
+    val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
+    var cameraReady by remember { mutableStateOf(false) }
+    var cameraError by remember { mutableStateOf<String?>(null) }
     
-    // SceneView components
-    val engine = rememberEngine()
-    val modelLoader = rememberModelLoader(engine)
-    val materialLoader = rememberMaterialLoader(engine)
-    val cameraStream = rememberARCameraStream(materialLoader)
-    val view = rememberView(engine)
-    val collisionSystem = rememberCollisionSystem(view)
-    
-    // Child nodes for AR scene
-    val childNodes = rememberNodes()
+    // Compass sensor listener
+    DisposableEffect(sensorManager) {
+        val rotationSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
+        
+        val sensorListener = object : SensorEventListener {
+            private val rotationMatrix = FloatArray(9)
+            private val orientationAngles = FloatArray(3)
+            
+            override fun onSensorChanged(event: SensorEvent) {
+                SensorManager.getRotationMatrixFromVector(rotationMatrix, event.values)
+                SensorManager.getOrientation(rotationMatrix, orientationAngles)
+                
+                // Convert to degrees (0-360)
+                val azimuth = Math.toDegrees(orientationAngles[0].toDouble()).toFloat()
+                deviceHeading = (azimuth + 360) % 360
+            }
+            
+            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+        }
+        
+        if (rotationSensor != null) {
+            sensorManager.registerListener(
+                sensorListener,
+                rotationSensor,
+                SensorManager.SENSOR_DELAY_UI
+            )
+        }
+        
+        onDispose {
+            sensorManager.unregisterListener(sensorListener)
+            cameraExecutor.shutdown()
+            Logger.d(Logger.Category.AR, "ARViewScreen disposed - camera released")
+        }
+    }
     
     // Refresh anchors on start
     LaunchedEffect(Unit) {
         viewModel.updateLocation()
-        viewModel.updateLocation()
     }
     
     Box(modifier = Modifier.fillMaxSize()) {
-        // Main AR Scene
-        ARScene(
-            modifier = Modifier.fillMaxSize(),
-            engine = engine,
-            modelLoader = modelLoader,
-            cameraStream = cameraStream,
-            view = view,
-            collisionSystem = collisionSystem,
-            childNodes = childNodes,
-            planeRenderer = true,
-            sessionConfiguration = { session, config ->
-                // Enable depth if supported
-                config.depthMode = when (session.isDepthModeSupported(Config.DepthMode.AUTOMATIC)) {
-                    true -> Config.DepthMode.AUTOMATIC
-                    else -> Config.DepthMode.DISABLED
-                }
-                config.lightEstimationMode = Config.LightEstimationMode.ENVIRONMENTAL_HDR
-                config.planeFindingMode = Config.PlaneFindingMode.HORIZONTAL_AND_VERTICAL
-                config.instantPlacementMode = Config.InstantPlacementMode.LOCAL_Y_UP
-            },
-            onSessionCreated = { session ->
-                Logger.d(Logger.Category.AR, "AR Session created")
-                arSessionReady = true
-            },
-            onSessionResumed = { session ->
-                Logger.d(Logger.Category.AR, "AR Session resumed")
-            },
-            onSessionUpdated = { session, frame ->
-                // Count detected planes
-                val planes = frame.getUpdatedTrackables(Plane::class.java)
-                if (planes.isNotEmpty()) {
-                    planesDetected = session.getAllTrackables(Plane::class.java).size
+        // Camera Preview
+        AndroidView(
+            factory = { ctx ->
+                PreviewView(ctx).apply {
+                    scaleType = PreviewView.ScaleType.FILL_CENTER
+                    startCamera(ctx, this, lifecycleOwner, cameraExecutor, 
+                        onReady = { cameraReady = true },
+                        onError = { error -> cameraError = error }
+                    )
                 }
             },
-            onTrackingFailureChanged = { reason ->
-                trackingFailureReason = reason
-                Logger.w(Logger.Category.AR, "Tracking failure: $reason")
-            },
-            onSessionFailed = { exception ->
-                Logger.e(Logger.Category.AR, "AR Session failed", exception)
-            }
+            modifier = Modifier.fillMaxSize()
         )
         
-        // Top overlay - Status bar
+        // Issue Labels Overlay
+        if (userLocation != null && anchors.isNotEmpty()) {
+            // Calculate which issues are in view based on heading
+            val visibleAnchors = anchors.mapNotNull { anchor ->
+                val bearing = BearingCalculator.calculateBearing(
+                    userLocation!!.latitude, userLocation!!.longitude,
+                    anchor.latitude, anchor.longitude
+                ).toFloat()
+                
+                // Calculate angle difference from current heading
+                var angleDiff = bearing - deviceHeading
+                if (angleDiff > 180) angleDiff -= 360
+                if (angleDiff < -180) angleDiff += 360
+                
+                // Only show issues within ±60° field of view
+                if (abs(angleDiff) <= 60) {
+                    val distance = FloatArray(1)
+                    Location.distanceBetween(
+                        userLocation!!.latitude, userLocation!!.longitude,
+                        anchor.latitude, anchor.longitude,
+                        distance
+                    )
+                    Triple(anchor, angleDiff, distance[0])
+                } else null
+            }.sortedBy { it.third } // Sort by distance
+            
+            // Draw labels
+            visibleAnchors.take(5).forEach { (anchor, angleDiff, distance) ->
+                // Position label based on angle (center = 0, left = -60, right = +60)
+                val xOffset = angleDiff / 60f // -1 to +1
+                
+                // Size based on distance (closer = bigger)
+                val scale = when {
+                    distance < 20 -> 1.3f
+                    distance < 50 -> 1.1f
+                    distance < 100 -> 1.0f
+                    distance < 200 -> 0.9f
+                    else -> 0.8f
+                }
+                
+                // Color based on category
+                val labelColor = when (anchor.category.lowercase()) {
+                    "safety" -> Color(0xFFE53935)  // Red
+                    "facility" -> Color(0xFF1E88E5)  // Blue
+                    else -> Color(0xFF43A047)  // Green
+                }
+                
+                // Vertical position based on index (stack labels)
+                val yPosition = 0.3f + (visibleAnchors.indexOf(Triple(anchor, angleDiff, distance)) * 0.12f)
+                
+                IssueLabel(
+                    anchor = anchor,
+                    distance = distance,
+                    xOffset = xOffset,
+                    yPosition = yPosition,
+                    scale = scale,
+                    color = labelColor,
+                    modifier = Modifier.align(Alignment.TopCenter)
+                )
+            }
+        }
+        
+        // Top status bar
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.TopCenter)
                 .padding(16.dp)
         ) {
-            // Close button (if provided)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            // Status chip
+            Surface(
+                color = if (cameraReady) Color(0xFF4CAF50) else Color(0xFFFF9800),
+                shape = RoundedCornerShape(16.dp)
             ) {
-                // Status chip
-                Surface(
-                    color = if (arSessionReady) Color(0xFF4CAF50) else Color(0xFFFF9800),
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = if (arSessionReady) "🎯 AR Active" else "⏳ Initializing",
-                            color = Color.White,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-                
-                // Close button
-                onClose?.let { closeCallback ->
-                    IconButton(
-                        onClick = {
-                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                            closeCallback()
-                        },
-                        modifier = Modifier
-                            .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                    ) {
-                        Icon(
-                            Icons.Default.Close,
-                            contentDescription = "Close AR View",
-                            tint = Color.White
-                        )
-                    }
-                }
-            }
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            // Tracking status/planes detected
-            if (planesDetected > 0) {
                 Text(
-                    text = "📐 $planesDetected surface${if (planesDetected > 1) "s" else ""} detected",
+                    text = if (cameraReady) "🎯 AR Active" else "⏳ Initializing",
                     color = Color.White,
                     fontSize = 12.sp,
-                    modifier = Modifier
-                        .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                 )
             }
             
-            // Tracking failure warning
-            trackingFailureReason?.let { reason ->
+            // Camera error
+            cameraError?.let { error ->
+                Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = getTrackingFailureMessage(reason),
+                    text = "📷 $error",
                     color = Color(0xFFFF5252),
                     fontSize = 12.sp,
                     modifier = Modifier
@@ -207,15 +224,26 @@ fun ARViewScreen(
                         .padding(horizontal = 8.dp, vertical = 4.dp)
                 )
             }
+            
+            // Compass heading
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "🧭 ${deviceHeading.toInt()}° ${getCardinalDirection(deviceHeading)}",
+                color = Color.White,
+                fontSize = 12.sp,
+                modifier = Modifier
+                    .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            )
         }
         
-        // Bottom overlay - Nearby issues count
+        // Bottom info panel
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.BottomCenter)
                 .padding(16.dp)
-                .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(16.dp))
+                .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(16.dp))
                 .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
@@ -236,21 +264,24 @@ fun ARViewScreen(
             
             Spacer(modifier = Modifier.height(8.dp))
             
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                // Refresh button
-                FilledTonalButton(
-                    onClick = {
-                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                        viewModel.updateLocation()
-                        viewModel.updateLocation()
-                    }
-                ) {
-                    Icon(Icons.Default.Refresh, contentDescription = "Refresh")
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Refresh")
+            Text(
+                text = "👆 Point camera towards issues to see labels",
+                color = Color.White.copy(alpha = 0.8f),
+                fontSize = 12.sp,
+                textAlign = TextAlign.Center
+            )
+            
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            FilledTonalButton(
+                onClick = {
+                    haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                    viewModel.updateLocation()
                 }
+            ) {
+                Icon(Icons.Default.Refresh, contentDescription = null)
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Refresh")
             }
         }
         
@@ -265,38 +296,127 @@ fun ARViewScreen(
                 CircularProgressIndicator(color = Color.White)
             }
         }
-        
-        // Instructions overlay (when no planes detected)
-        if (arSessionReady && planesDetected == 0 && trackingFailureReason == null) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(bottom = 150.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "👀 Point camera at a flat surface",
-                    color = Color.White,
-                    fontSize = 16.sp,
-                    modifier = Modifier
-                        .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
+    }
+}
+
+/**
+ * Floating issue label composable
+ */
+@Composable
+private fun IssueLabel(
+    anchor: AnchorData,
+    distance: Float,
+    xOffset: Float,
+    yPosition: Float,
+    scale: Float,
+    color: Color,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 32.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .offset(x = (xOffset * 150).dp, y = (yPosition * 1000).dp)
+                .graphicsLayer(
+                    scaleX = scale,
+                    scaleY = scale
                 )
-            }
+                .background(color.copy(alpha = 0.9f), RoundedCornerShape(12.dp))
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            // Category icon
+            Text(
+                text = when (anchor.category.lowercase()) {
+                    "safety" -> "⚠️"
+                    "facility" -> "🏢"
+                    else -> "📍"
+                },
+                fontSize = 16.sp
+            )
+            
+            // Issue text
+            Text(
+                text = anchor.messageText,
+                color = Color.White,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.widthIn(max = 120.dp)
+            )
+            
+            // Distance
+            Text(
+                text = if (distance < 1000) "${distance.toInt()}m" else "${String.format("%.1f", distance/1000)}km",
+                color = Color.White.copy(alpha = 0.8f),
+                fontSize = 10.sp
+            )
         }
     }
 }
 
 /**
- * Get user-friendly tracking failure message
+ * Start CameraX preview
  */
-private fun getTrackingFailureMessage(reason: TrackingFailureReason): String {
-    return when (reason) {
-        TrackingFailureReason.NONE -> ""
-        TrackingFailureReason.BAD_STATE -> "⚠️ AR session error - restart app"
-        TrackingFailureReason.INSUFFICIENT_LIGHT -> "💡 Too dark - move to brighter area"
-        TrackingFailureReason.EXCESSIVE_MOTION -> "📱 Moving too fast - hold steady"
-        TrackingFailureReason.INSUFFICIENT_FEATURES -> "🔍 Not enough features - point at textured surface"
-        TrackingFailureReason.CAMERA_UNAVAILABLE -> "📷 Camera unavailable"
+private fun startCamera(
+    context: Context,
+    previewView: PreviewView,
+    lifecycleOwner: LifecycleOwner,
+    executor: ExecutorService,
+    onReady: () -> Unit,
+    onError: (String) -> Unit
+) {
+    val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
+    
+    cameraProviderFuture.addListener({
+        try {
+            val cameraProvider = cameraProviderFuture.get()
+            
+            // Unbind all before rebinding
+            cameraProvider.unbindAll()
+            
+            val preview = Preview.Builder()
+                .build()
+                .also {
+                    it.setSurfaceProvider(previewView.surfaceProvider)
+                }
+            
+            val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+            
+            cameraProvider.bindToLifecycle(
+                lifecycleOwner,
+                cameraSelector,
+                preview
+            )
+            
+            onReady()
+            Logger.d(Logger.Category.AR, "CameraX started successfully")
+            
+        } catch (e: Exception) {
+            Logger.e(Logger.Category.AR, "CameraX init failed", e)
+            onError(e.message ?: "Camera init failed")
+        }
+    }, ContextCompat.getMainExecutor(context))
+}
+
+/**
+ * Get cardinal direction from heading
+ */
+private fun getCardinalDirection(heading: Float): String {
+    return when {
+        heading < 22.5 || heading >= 337.5 -> "N"
+        heading < 67.5 -> "NE"
+        heading < 112.5 -> "E"
+        heading < 157.5 -> "SE"
+        heading < 202.5 -> "S"
+        heading < 247.5 -> "SW"
+        heading < 292.5 -> "W"
+        else -> "NW"
     }
 }
