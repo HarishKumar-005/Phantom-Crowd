@@ -7,23 +7,29 @@ import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.location.Location
 import android.view.View
-import android.widget.ImageView
+import android.view.ViewGroup
 import android.widget.TextView
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -50,10 +56,12 @@ import kotlinx.coroutines.delay
  * Displays camera feed with floating arrow pointing to destination.
  * Features:
  * - AR Camera via SceneView 2.0.3
- * - 3D Arrow Node (ViewNode in 3D space)
+ * - 3D Arrow Node (ViewNode in 3D space) + 2D Overlay fallback
  * - Real-time distance display
  * - Voice guidance
  * - Color-coded distance indicator
+ * - Pulse animation when close
+ * - Haptic feedback
  */
 @Composable
 fun ARNavigationScreen(
@@ -63,6 +71,7 @@ fun ARNavigationScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
     
     // Voice guidance
     val voiceManager = remember { VoiceGuidanceManager(context) }
@@ -147,6 +156,18 @@ fun ARNavigationScreen(
             delay(16) // ~60 FPS
         }
     }
+
+    // Pulse animation for close proximity
+    val pulseTransition = rememberInfiniteTransition(label = "Pulse")
+    val pulseScale by pulseTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = if (distance <= 50f) 1.2f else 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1000),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "PulseScale"
+    )
     
     // Voice guidance logic
     LaunchedEffect(distance, hasSpokenStart) {
@@ -164,6 +185,7 @@ fun ARNavigationScreen(
             if (distance <= 20f && !hasArrived) {
                 hasArrived = true
                 voiceManager.speakArrival()
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
             }
         }
     }
@@ -196,7 +218,6 @@ fun ARNavigationScreen(
     }
 
     // Update rotation of the 3D node
-    // We apply the rotation to the Z axis of the node to simulate the 2D rotation
     LaunchedEffect(displayRotation) {
         arrowNode.rotation = Rotation(0.0f, 0.0f, -displayRotation)
     }
@@ -211,9 +232,9 @@ fun ARNavigationScreen(
             textSize = 100f
             setTextColor(arrowColor.toArgb())
             textAlignment = View.TEXT_ALIGNMENT_CENTER
-            layoutParams = android.view.ViewGroup.LayoutParams(
-                android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
-                android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
             )
         }
         viewNode.loadView(context, textView)
@@ -265,9 +286,10 @@ fun ARNavigationScreen(
                 )
         )
         
-        // Close button (top right)
+        // Close button (top right) with haptic feedback
         IconButton(
             onClick = {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                 voiceManager.stop()
                 onClose()
             },
@@ -307,8 +329,32 @@ fun ARNavigationScreen(
             )
         }
         
-        // REMOVED 2D OVERLAY ARROW
-        // The arrow is now rendered as a 3D ViewNode in the ARScene
+        // 2D OVERLAY ARROW (Fallback + Always Visible)
+        Box(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .size(200.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            // Glow effect background
+            Box(
+                modifier = Modifier
+                    .size(180.dp)
+                    .clip(CircleShape)
+                    .background(arrowColor.copy(alpha = 0.2f))
+            )
+            
+            // Arrow icon with pulse animation
+            Icon(
+                imageVector = Icons.Default.KeyboardArrowUp,
+                contentDescription = "Direction Arrow",
+                modifier = Modifier
+                    .size(160.dp)
+                    .graphicsLayer(scaleX = pulseScale, scaleY = pulseScale)
+                    .rotate(displayRotation),
+                tint = arrowColor
+            )
+        }
         
         // Distance display (bottom center)
         Column(
