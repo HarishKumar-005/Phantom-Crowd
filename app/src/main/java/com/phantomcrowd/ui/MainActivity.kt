@@ -126,22 +126,25 @@ fun MainScreen(viewModel: MainViewModel) {
     
     Scaffold(
         bottomBar = {
-            NavigationBar {
-                tabs.forEachIndexed { index, title ->
-                    NavigationBarItem(
-                        icon = { 
-                            when(index) {
-                                0 -> Icon(Icons.Filled.List, contentDescription = null)
-                                1 -> Icon(Icons.Filled.Add, contentDescription = null)
-                                2 -> Icon(Icons.Filled.Place, contentDescription = null)
-                                3 -> Icon(Icons.Filled.LocationOn, contentDescription = null)
-                                else -> Icon(Icons.Filled.Home, contentDescription = null)
-                            }
-                        },
-                        label = { Text(title) },
-                        selected = selectedTab == index,
-                        onClick = { selectedTab = index }
-                    )
+            // Hide bottom navigation when AR Navigation overlay is active
+            if (!showARNavigation) {
+                NavigationBar {
+                    tabs.forEachIndexed { index, title ->
+                        NavigationBarItem(
+                            icon = { 
+                                when(index) {
+                                    0 -> Icon(Icons.Filled.List, contentDescription = null)
+                                    1 -> Icon(Icons.Filled.Add, contentDescription = null)
+                                    2 -> Icon(Icons.Filled.Place, contentDescription = null)
+                                    3 -> Icon(Icons.Filled.LocationOn, contentDescription = null)
+                                    else -> Icon(Icons.Filled.Home, contentDescription = null)
+                                }
+                            },
+                            label = { Text(title) },
+                            selected = selectedTab == index,
+                            onClick = { selectedTab = index }
+                        )
+                    }
                 }
             }
         }
