@@ -167,7 +167,13 @@ fun MainScreen(viewModel: MainViewModel) {
                         selectedTab = 2 // Switch to Map tab
                         viewModel.updateLocation() // Refresh issues
                     },
-                    onCancel = { selectedTab = 0 } // Go to Nearby tab
+                    onCancel = { selectedTab = 0 }, // Go to Nearby tab
+                    onOpenARPlacement = { messageText, category ->
+                        // Store message and category, then show AR screen
+                        surfaceAnchorMessageText = messageText
+                        surfaceAnchorCategory = category
+                        showSurfaceAnchorScreen = true
+                    }
                 )
                 2 -> {
                     // Map Tab with Heatmap controls

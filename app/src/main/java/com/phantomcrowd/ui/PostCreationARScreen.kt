@@ -6,7 +6,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.phantomcrowd.data.AnchorData
 import com.phantomcrowd.utils.Logger
@@ -19,13 +21,15 @@ import java.util.UUID
  * - Form-based input for message and category
  * - Location-based posting
  * - Firestore upload (no Firebase Storage required)
+ * - AR Surface Placement option (Phase I)
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PostCreationARScreen(
     viewModel: MainViewModel,
     onPostCreated: () -> Unit,
-    onCancel: () -> Unit
+    onCancel: () -> Unit,
+    onOpenARPlacement: ((messageText: String, category: String) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -160,6 +164,55 @@ fun PostCreationARScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+        }
+        
+        // AR Surface Placement Option (Phase I - Pokemon Go style!)
+        if (onOpenARPlacement != null) {
+            Divider(modifier = Modifier.padding(vertical = 8.dp))
+            
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = Color(0xFF4CAF50).copy(alpha = 0.1f)
+                )
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        "🎯 OR Place on Surface (AR)",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF4CAF50)
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        "Use AR to anchor your message to a wall or floor",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(
+                        onClick = {
+                            if (messageText.isBlank()) {
+                                Toast.makeText(context, "Enter a message first", Toast.LENGTH_SHORT).show()
+                            } else {
+                                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                                onOpenARPlacement(messageText, selectedCategory)
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = messageText.isNotBlank(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF4CAF50),
+                            disabledContainerColor = Color.Gray
+                        )
+                    ) {
+                        Text("🧱 PLACE ON SURFACE", fontWeight = FontWeight.Bold)
+                    }
+                }
             }
         }
         
