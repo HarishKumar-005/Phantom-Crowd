@@ -8,12 +8,12 @@ plugins {
 
 android {
     namespace 'com.phantomcrowd'
-    compileSdk 34
+    compileSdk 35
 
     defaultConfig {
         applicationId "com.phantomcrowd"
         minSdk 24
-        targetSdk 34
+        targetSdk 35
         versionCode 1
         versionName "1.0"
 
@@ -79,8 +79,8 @@ dependencies {
     // ARCore
     implementation 'com.google.ar:core:1.41.0'
     
-    // SceneView 2.0 (Modern AR for Compose) - REPLACES SCENEFORM
-    implementation 'io.github.sceneview:arsceneview:2.0.3'
+    // SceneView 2.2.1 (Compatible with SDK 35)
+    implementation 'io.github.sceneview:arsceneview:2.2.1'
     
     // OpenStreetMap (osmdroid) - Free map tiles, no API key needed
     implementation 'org.osmdroid:osmdroid-android:6.1.20'
