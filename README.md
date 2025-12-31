@@ -1,63 +1,77 @@
-# Phantom Crowd - AR Location-Based Messaging (Phase 1 MVP)
+# Phantom Crowd
 
-This is the source code for Phase 1 of Phantom Crowd. It implements the Core AR Geospatial functionality using ARCore and Sceneform, with local JSON persistence.
+Phantom Crowd is an AR-based civic issue reporting and navigation application built for Android using Kotlin and Jetpack Compose. It leverages Augmented Reality (AR) to visualize and report civic issues (like potholes, broken streetlights, etc.) in the real world using geospatial anchors.
 
-## Project Overview
-- **Language**: Kotlin
-- **UI**: Jetpack Compose
-- **AR**: ARCore Geospatial API + Sceneform (Maintained)
-- **Data**: Local JSON Storage (`anchors.json`)
-- **Location**: Google Play Services Location
+## Features
+
+- **AR Issue Reporting**: Place virtual 3D markers in the real world to report issues.
+- **Geospatial Anchors**: Issues are anchored to specific GPS coordinates using ARCore's Geospatial API.
+- **Interactive Map**: View reported issues on an interactive map powered by OpenStreetMap.
+- **Nearby Issues**: Discover issues reported by others in your vicinity.
+- **Real-time Backend**: Powered by Firebase Firestore for real-time data synchronization.
+- **Media Uploads**: Attach photos to your reports (stored in Firebase Storage).
+- **Navigation**: AR-assisted navigation to issue locations.
+
+## Screenshots
+
+| Home Screen | AR View | Map View | Post Issue |
+|:---:|:---:|:---:|:---:|
+| ![Home Screen](docs/screenshots/home.png) | ![AR View](docs/screenshots/ar_view.png) | ![Map View](docs/screenshots/map_view.png) | ![Post Issue](docs/screenshots/post_issue.png) |
+
+*(Note: Screenshots to be added)*
+
+## Tech Stack
+
+- **Language**: [Kotlin](https://kotlinlang.org/)
+- **UI Framework**: [Jetpack Compose](https://developer.android.com/jetbrains/compose) (Material3)
+- **AR Engine**: [SceneView](https://github.com/SceneView/sceneview-android) (ARCore Geospatial API)
+- **Maps**: [osmdroid](https://github.com/osmdroid/osmdroid) (OpenStreetMap)
+- **Backend**: [Firebase](https://firebase.google.com/) (Firestore, Storage, Crashlytics)
+- **Camera**: [CameraX](https://developer.android.com/training/camerax)
+- **Architecture**: MVVM (Model-View-ViewModel)
 
 ## Setup Instructions
 
-### 1. Open in Android Studio
-1.  Open Android Studio.
-2.  Select "Open" and navigate to `Phantom Crowd` folder.
-3.  Let Gradle sync.
+### Prerequisites
+- Android Studio Iguana or newer.
+- An Android device with ARCore support (Google Play Services for AR).
+- A Google Cloud Project with **ARCore API** enabled.
+- A Firebase Project.
 
-### 2. Configure API Key (SECURE WAY)
-Phantom Crowd uses ARCore's Geospatial API. To keep your key safe and not expose it on GitHub:
+### 1. Clone the Repository
+```bash
+git clone https://github.com/your-username/phantom-crowd.git
+cd phantom-crowd
+```
 
-1.  Go to [Google Cloud Console](https://console.cloud.google.com/).
-2.  Enable **ARCore API**.
-3.  Create an API Key.
-4.  Open the file `local.properties` in the root of your project (this file is ignored by Git).
-5.  Add the following line:
+### 2. Configure Firebase
+1.  Create a project in the [Firebase Console](https://console.firebase.google.com/).
+2.  Add an Android app to your Firebase project.
+3.  Download the `google-services.json` file.
+4.  Place `google-services.json` in the `app/` directory of the project.
+
+### 3. Configure API Keys
+1.  Get an API Key from Google Cloud Console with **ARCore API** enabled.
+2.  Create or open `local.properties` in the project root.
+3.  Add your API key:
     ```properties
-    AR_CORE_API_KEY=your_actual_api_key_here
+    AR_CORE_API_KEY=your_api_key_here
     ```
-    *(Replace `your_actual_api_key_here` with the key starting with AIza...)*
 
-The app will now automatically inject this key into the Manifest during the build process. Do **NOT** verify `local.properties` into version control.
+### 4. Build and Run
+1.  Open the project in Android Studio.
+2.  Sync Gradle.
+3.  Connect your physical Android device.
+4.  Run the app (`app` configuration).
 
-### 3. Emulator Configuration (For MVP Testing)
-To test AR Geospatial on the emulator:
-1.  Use an AVD with **API Level 33 or 34** (Google Play supported).
-2.  Launch the Emulator.
-3.  Click the "..." (Extended Controls).
-4.  Go to **Location**.
-5.  Set coordinates to **Latitude: 12.9716, Longitude: 79.1578** (or your target location).
-6.  Go to **Camera** (in Extended Controls) and ensure a virtual scene is selectable (standard feature for newer emulators).
+**Note:** The emulator must be configured with specific coordinates and camera support to test AR features, but a physical device is highly recommended.
 
-### 4. Running the App
-1.  Run the app on the Emulator.
-2.  Allow **Camera** and **Location** permissions.
-3.  **Post Issue**: Go to "Post Issue" tab, type a message, and post.
-4.  **AR View**: Go to "AR View" tab. If the Emulator camera is pointing correctly and GPS is set, you should see the label floating.
-5.  **Nearby**: Check the list tab to see your message.
+## Team
 
-## Troubleshooting
-- **AR Session Fail**: If AR session fails, ensure the Emulator supports AR (Google Play Services for AR must be installed on the image). `x86_64` images sometimes lack full ARCore support; consider using a physical device for best AR results.
-- **GPS Not Updating**: Use the "Send" button in Extended Controls > Location to force a GPS update.
+**Phantom Crowd Team**
 
-## File Structure
-- `ui/`: Compose screens (MainActivity, PostIssue, Nearby, ARView).
-- `ar/`: ARCore and Sceneform managers.
-- `data/`: Data models and JSON storage.
-- `utils/`: Helpers.
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
-## Next Steps (Phase 2)
-- Firebase Integration (Real-time DB).
-- ML Filtering.
-- User Authentication.
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
