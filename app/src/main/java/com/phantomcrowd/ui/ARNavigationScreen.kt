@@ -6,9 +6,11 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.location.Location
-import android.view.View
 import android.view.ViewGroup
-import android.widget.TextView
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -26,42 +28,36 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.LifecycleOwner
 import com.phantomcrowd.ar.VoiceGuidanceManager
 import com.phantomcrowd.data.AnchorData
 import com.phantomcrowd.utils.BearingCalculator
 import com.phantomcrowd.utils.Logger
-import com.google.ar.core.Config
-import io.github.sceneview.ar.ARScene
-import io.github.sceneview.ar.node.ArNode
-import io.github.sceneview.math.Position
-import io.github.sceneview.math.Rotation
-import io.github.sceneview.node.ViewNode
-import io.github.sceneview.rememberEngine
-import io.github.sceneview.rememberModelLoader
-import io.github.sceneview.rememberNodes
-import io.github.sceneview.rememberView
 import kotlinx.coroutines.delay
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 /**
  * ARNavigationScreen - The WOW MOMENT feature!
  * 
  * Displays camera feed with floating arrow pointing to destination.
  * Features:
- * - AR Camera via SceneView 2.0.3
- * - 3D Arrow Node (ViewNode in 3D space) + 2D Overlay fallback
+ * - Camera preview via CameraX (stable, reliable)
+ * - Large directional arrow overlay with pulse animation
  * - Real-time distance display
  * - Voice guidance
  * - Color-coded distance indicator
- * - Pulse animation when close
- * - Haptic feedback
+ * - Haptic feedback on arrival
  */
 @Composable
 fun ARNavigationScreen(
@@ -71,6 +67,7 @@ fun ARNavigationScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val haptic = LocalHapticFeedback.current
     
     // Voice guidance
@@ -86,6 +83,9 @@ fun ARNavigationScreen(
     // Navigation state
     var hasSpokenStart by remember { mutableStateOf(false) }
     var hasArrived by remember { mutableStateOf(false) }
+    
+    // Camera executor
+    val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
     
     // Initialize voice on first composition
     LaunchedEffect(Unit) {
@@ -124,6 +124,7 @@ fun ARNavigationScreen(
         
         onDispose {
             sensorManager.unregisterListener(sensorListener)
+            cameraExecutor.shutdown()
             voiceManager.shutdown()
         }
     }
@@ -204,69 +205,22 @@ fun ARNavigationScreen(
     }
     
     val directionText = BearingCalculator.bearingToCardinal(targetBearing.toDouble())
-
-    // Setup AR Engine and Nodes
-    val engine = rememberEngine()
-    val modelLoader = rememberModelLoader(engine)
-    val view = rememberView(engine)
-
-    // Create arrow node
-    val arrowNode = remember(engine) {
-        ArNode(engine).apply {
-             position = Position(0.0f, 0.0f, -2.0f) // 2 meters ahead
-        }
-    }
-
-    // Update rotation of the 3D node
-    LaunchedEffect(displayRotation) {
-        arrowNode.rotation = Rotation(0.0f, 0.0f, -displayRotation)
-    }
-
-    // Visual for the arrow using ViewNode
-    LaunchedEffect(engine, arrowColor) {
-        val viewNode = ViewNode(engine)
-        viewNode.isFocusable = false
-        // Create a TextView with a large arrow character as a simple visual representation
-        val textView = TextView(context).apply {
-            text = "⬆" // Unicode Up Arrow
-            textSize = 100f
-            setTextColor(arrowColor.toArgb())
-            textAlignment = View.TEXT_ALIGNMENT_CENTER
-            layoutParams = ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            )
-        }
-        viewNode.loadView(context, textView)
-        viewNode.position = Position(0.0f, 0.0f, 0.0f)
-
-        // Remove existing children to avoid duplicates if color changes
-        arrowNode.destroyChildren()
-        arrowNode.addChild(viewNode)
-    }
     
-    // Make sure the arrow node is rooted in the scene
-    val childNodes = rememberNodes {
-        add(arrowNode)
-    }
-
     Box(modifier = modifier.fillMaxSize()) {
-        ARScene(
+        // Camera Background using CameraX
+        AndroidView(
             modifier = Modifier.fillMaxSize(),
-            engine = engine,
-            modelLoader = modelLoader,
-            view = view,
-            planeRenderer = true,
-            childNodes = childNodes,
-            sessionConfiguration = { session, config ->
-                config.depthMode = when (session.isDepthModeSupported(Config.DepthMode.AUTOMATIC)) {
-                    true -> Config.DepthMode.AUTOMATIC
-                    else -> Config.DepthMode.DISABLED
+            factory = { ctx ->
+                PreviewView(ctx).apply {
+                    layoutParams = ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                    scaleType = PreviewView.ScaleType.FILL_CENTER
+                    
+                    // Start camera
+                    startCamera(ctx, this, lifecycleOwner, cameraExecutor)
                 }
-                config.lightEstimationMode = Config.LightEstimationMode.ENVIRONMENTAL_HDR
-            },
-            onSessionUpdated = { session, frame ->
-                // Future enhancement: Update arrowNode position to real-world anchor
             }
         )
         
@@ -329,7 +283,7 @@ fun ARNavigationScreen(
             )
         }
         
-        // 2D OVERLAY ARROW (Fallback + Always Visible)
+        // MAIN ARROW (Center) with Pulse Animation
         Box(
             modifier = Modifier
                 .align(Alignment.Center)
@@ -344,7 +298,7 @@ fun ARNavigationScreen(
                     .background(arrowColor.copy(alpha = 0.2f))
             )
             
-            // Arrow icon with pulse animation
+            // Arrow icon with pulse when close
             Icon(
                 imageVector = Icons.Default.KeyboardArrowUp,
                 contentDescription = "Direction Arrow",
@@ -409,6 +363,37 @@ fun ARNavigationScreen(
             }
         }
     }
+}
+
+/**
+ * Start CameraX preview
+ */
+private fun startCamera(
+    context: Context,
+    previewView: PreviewView,
+    lifecycleOwner: LifecycleOwner,
+    executor: ExecutorService
+) {
+    val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
+    
+    cameraProviderFuture.addListener({
+        try {
+            val cameraProvider = cameraProviderFuture.get()
+            
+            val preview = Preview.Builder().build().also {
+                it.setSurfaceProvider(previewView.surfaceProvider)
+            }
+            
+            val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+            
+            cameraProvider.unbindAll()
+            cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, preview)
+            
+            Logger.d(Logger.Category.AR, "CameraX started successfully")
+        } catch (e: Exception) {
+            Logger.e(Logger.Category.AR, "CameraX start failed", e)
+        }
+    }, ContextCompat.getMainExecutor(context))
 }
 
 /**
