@@ -58,17 +58,36 @@ import java.util.concurrent.Executors
  * - Voice guidance
  * - Color-coded distance indicator
  * - Haptic feedback on arrival
+ * - Robust error handling with snackbar
  */
 @Composable
 fun ARNavigationScreen(
     targetAnchor: AnchorData,
     userLocation: Location?,
     onClose: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    viewModel: MainViewModel? = null
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val haptic = LocalHapticFeedback.current
+    
+    // Error handling state
+    val snackbarHostState = remember { SnackbarHostState() }
+    val errorMessage by viewModel?.errorMessage?.collectAsState() ?: remember { mutableStateOf<String?>(null) }
+    var cameraError by remember { mutableStateOf<String?>(null) }
+
+    // Show errors via snackbar
+    LaunchedEffect(errorMessage, cameraError) {
+        errorMessage?.let {
+            snackbarHostState.showSnackbar(it, duration = SnackbarDuration.Long)
+            viewModel?.clearError()
+        }
+        cameraError?.let {
+            snackbarHostState.showSnackbar("Camera Error: $it", duration = SnackbarDuration.Long)
+            cameraError = null
+        }
+    }
     
     // Voice guidance
     val voiceManager = remember { VoiceGuidanceManager(context) }
@@ -218,8 +237,11 @@ fun ARNavigationScreen(
                     )
                     scaleType = PreviewView.ScaleType.FILL_CENTER
                     
-                    // Start camera
-                    startCamera(ctx, this, lifecycleOwner, cameraExecutor)
+                    // Start camera with error callback
+                    startCamera(ctx, this, lifecycleOwner, cameraExecutor) { error ->
+                        Logger.e(Logger.Category.AR, "Camera error: $error")
+                        cameraError = error
+                    }
                 }
             }
         )
@@ -359,20 +381,38 @@ fun ARNavigationScreen(
                         color = Color.White,
                         fontSize = 18.sp
                     )
+
+                    // Retry button for GPS errors
+                    if (errorMessage?.contains("GPS", ignoreCase = true) == true ||
+                        errorMessage?.contains("location", ignoreCase = true) == true) {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Button(onClick = { viewModel?.updateLocation() }) {
+                            Text("Retry")
+                        }
+                    }
                 }
             }
         }
+
+        // Snackbar for error messages
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 16.dp)
+        )
     }
 }
 
 /**
- * Start CameraX preview
+ * Start CameraX preview with error callback
  */
 private fun startCamera(
     context: Context,
     previewView: PreviewView,
     lifecycleOwner: LifecycleOwner,
-    executor: ExecutorService
+    executor: ExecutorService,
+    onError: (String) -> Unit
 ) {
     val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
     
@@ -392,6 +432,7 @@ private fun startCamera(
             Logger.d(Logger.Category.AR, "CameraX started successfully")
         } catch (e: Exception) {
             Logger.e(Logger.Category.AR, "CameraX start failed", e)
+            onError(e.message ?: "Camera initialization failed")
         }
     }, ContextCompat.getMainExecutor(context))
 }

@@ -59,6 +59,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // Error state
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
+    val errorMessage: StateFlow<String?> = _error.asStateFlow()  // Alias for ARNavigationScreen
     
     // Navigation Tab state (Phase 2)
     private val _selectedAnchor = MutableStateFlow<AnchorData?>(null)
