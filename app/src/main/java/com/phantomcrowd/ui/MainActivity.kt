@@ -307,32 +307,48 @@ fun MainScreen(viewModel: MainViewModel) {
                 onAnchorPlaced = { anchor ->
                     // Save anchor to Firestore
                     scope.launch {
-                        val result = SurfaceAnchorManager.saveAnchor(
-                            messageText = anchor.messageText,
-                            category = anchor.category,
-                            location = android.location.Location("").apply {
-                                latitude = anchor.latitude
-                                longitude = anchor.longitude
-                            },
-                            anchorPose = com.google.ar.core.Pose(
-                                anchor.getOffset().toList().toFloatArray(),
-                                floatArrayOf(0f, 0f, 0f, 1f)
-                            ),
-                            planeType = com.google.ar.core.Plane.Type.valueOf(anchor.planeType),
-                            surfaceNormal = anchor.getSurfaceNormal().toList().toFloatArray()
-                        )
-                        result.onSuccess {
+                        try {
+                            // Convert Triple to FloatArray properly
+                            val offset = anchor.getOffset()
+                            val offsetArray = floatArrayOf(offset.first, offset.second, offset.third)
+                            
+                            val normal = anchor.getSurfaceNormal()
+                            val normalArray = floatArrayOf(normal.first, normal.second, normal.third)
+                            
+                            val result = SurfaceAnchorManager.saveAnchor(
+                                messageText = anchor.messageText,
+                                category = anchor.category,
+                                location = android.location.Location("").apply {
+                                    latitude = anchor.latitude
+                                    longitude = anchor.longitude
+                                },
+                                anchorPose = com.google.ar.core.Pose(
+                                    offsetArray,
+                                    floatArrayOf(0f, 0f, 0f, 1f)
+                                ),
+                                planeType = com.google.ar.core.Plane.Type.valueOf(anchor.planeType),
+                                surfaceNormal = normalArray
+                            )
+                            result.onSuccess {
+                                android.widget.Toast.makeText(
+                                    context, 
+                                    "✅ Message placed on surface!", 
+                                    android.widget.Toast.LENGTH_SHORT
+                                ).show()
+                                viewModel.updateLocation() // Refresh anchors
+                            }
+                            result.onFailure {
+                                android.widget.Toast.makeText(
+                                    context, 
+                                    "❌ Failed to save: ${it.message}", 
+                                    android.widget.Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        } catch (e: Exception) {
+                            android.util.Log.e("SurfaceAnchor", "Failed to save anchor", e)
                             android.widget.Toast.makeText(
                                 context, 
-                                "✅ Message placed on surface!", 
-                                android.widget.Toast.LENGTH_SHORT
-                            ).show()
-                            viewModel.updateLocation() // Refresh anchors
-                        }
-                        result.onFailure {
-                            android.widget.Toast.makeText(
-                                context, 
-                                "❌ Failed to save: ${it.message}", 
+                                "❌ Error: ${e.message}", 
                                 android.widget.Toast.LENGTH_SHORT
                             ).show()
                         }
