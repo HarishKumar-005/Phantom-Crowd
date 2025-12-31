@@ -6,19 +6,28 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.phantomcrowd.data.SurfaceAnchor
+import com.phantomcrowd.data.SurfaceAnchorManager
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PostIssueScreen(viewModel: MainViewModel) {
+fun PostIssueScreen(
+    viewModel: MainViewModel,
+    onOpenARPlacement: ((messageText: String, category: String) -> Unit)? = null
+) {
     var messageText by remember { mutableStateOf("") }
     var expanded by remember { mutableStateOf(false) }
     var selectedCategory by remember { mutableStateOf("General") }
-    val categories = listOf("General", "Facility", "Safety")
+    val categories = listOf("General", "Facility", "Safety", "Event", "Social")
     
     val currentLocation by viewModel.currentLocation.collectAsState()
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     Column(
         modifier = Modifier
@@ -106,7 +115,46 @@ fun PostIssueScreen(viewModel: MainViewModel) {
             modifier = Modifier.fillMaxWidth(),
             enabled = currentLocation != null && messageText.isNotBlank()
         ) {
-            Text("POST ANONYMOUSLY")
+            Text("📍 POST ANONYMOUSLY (GPS)")
+        }
+        
+        // AR Placement Section
+        Spacer(modifier = Modifier.height(16.dp))
+        
+        Divider()
+        
+        Spacer(modifier = Modifier.height(16.dp))
+        
+        Text(
+            text = "🎯 OR Place on Surface (AR)",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold
+        )
+        
+        Text(
+            text = "Use AR to place your message on a wall or floor for precise accuracy",
+            style = MaterialTheme.typography.bodySmall,
+            color = Color.Gray
+        )
+        
+        Spacer(modifier = Modifier.height(8.dp))
+        
+        Button(
+            onClick = {
+                if (messageText.isNotBlank()) {
+                    onOpenARPlacement?.invoke(messageText, selectedCategory)
+                        ?: Toast.makeText(context, "AR Placement not available", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(context, "Enter a message first", Toast.LENGTH_SHORT).show()
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+            enabled = messageText.isNotBlank(),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color(0xFF4CAF50)
+            )
+        ) {
+            Text("🧱 PLACE ON SURFACE (AR)")
         }
     }
 }

@@ -30,6 +30,9 @@ import androidx.compose.ui.unit.sp
 import com.phantomcrowd.ui.tabs.MapDiscoveryTab
 import com.phantomcrowd.ui.tabs.NavigationTab
 import com.phantomcrowd.ui.theme.PhantomCrowdTheme
+import com.phantomcrowd.data.SurfaceAnchor
+import com.phantomcrowd.data.SurfaceAnchorManager
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     
@@ -82,6 +85,12 @@ fun MainScreen(viewModel: MainViewModel) {
     
     // AR Navigation overlay state (Phase G)
     var showARNavigation by remember { mutableStateOf(false) }
+    
+    // Surface Anchor placement state (Phase I)
+    var showSurfaceAnchorScreen by remember { mutableStateOf(false) }
+    var surfaceAnchorMessageText by remember { mutableStateOf("") }
+    var surfaceAnchorCategory by remember { mutableStateOf("General") }
+    val scope = rememberCoroutineScope()
     
     val permissions = arrayOf(
         android.Manifest.permission.CAMERA,
@@ -264,6 +273,55 @@ fun MainScreen(viewModel: MainViewModel) {
                 targetAnchor = selectedAnchor!!,
                 userLocation = currentLocation,
                 onClose = { showARNavigation = false }
+            )
+        }
+        
+        // Surface Anchor Placement Overlay (Phase I - Pokemon Go style!)
+        if (showSurfaceAnchorScreen) {
+            SurfaceAnchorScreen(
+                messageText = surfaceAnchorMessageText,
+                category = surfaceAnchorCategory,
+                userLocation = currentLocation,
+                onAnchorPlaced = { anchor ->
+                    // Save anchor to Firestore
+                    scope.launch {
+                        val result = SurfaceAnchorManager.saveAnchor(
+                            messageText = anchor.messageText,
+                            category = anchor.category,
+                            location = android.location.Location("").apply {
+                                latitude = anchor.latitude
+                                longitude = anchor.longitude
+                            },
+                            anchorPose = com.google.ar.core.Pose(
+                                anchor.getOffset().toList().toFloatArray(),
+                                floatArrayOf(0f, 0f, 0f, 1f)
+                            ),
+                            planeType = com.google.ar.core.Plane.Type.valueOf(anchor.planeType),
+                            surfaceNormal = anchor.getSurfaceNormal().toList().toFloatArray()
+                        )
+                        result.onSuccess {
+                            android.widget.Toast.makeText(
+                                context, 
+                                "✅ Message placed on surface!", 
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                            viewModel.updateLocation() // Refresh anchors
+                        }
+                        result.onFailure {
+                            android.widget.Toast.makeText(
+                                context, 
+                                "❌ Failed to save: ${it.message}", 
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    }
+                    showSurfaceAnchorScreen = false
+                    surfaceAnchorMessageText = ""
+                    selectedTab = 0 // Go to Nearby tab
+                },
+                onCancel = {
+                    showSurfaceAnchorScreen = false
+                }
             )
         }
         

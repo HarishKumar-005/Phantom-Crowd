@@ -1,0 +1,83 @@
+> Task :app:preBuild UP-TO-DATE
+> Task :app:preDebugBuild UP-TO-DATE
+> Task :app:mergeDebugNativeDebugMetadata NO-SOURCE
+> Task :app:checkKotlinGradlePluginConfigurationErrors
+> Task :app:checkDebugAarMetadata UP-TO-DATE
+> Task :app:generateDebugResValues UP-TO-DATE
+> Task :app:injectCrashlyticsMappingFileIdDebug UP-TO-DATE
+> Task :app:injectCrashlyticsVersionControlInfoDebug UP-TO-DATE
+> Task :app:processDebugGoogleServices UP-TO-DATE
+> Task :app:mapDebugSourceSetPaths UP-TO-DATE
+> Task :app:generateDebugResources UP-TO-DATE
+> Task :app:mergeDebugResources UP-TO-DATE
+> Task :app:packageDebugResources UP-TO-DATE
+> Task :app:parseDebugLocalResources UP-TO-DATE
+> Task :app:createDebugCompatibleScreenManifests UP-TO-DATE
+> Task :app:extractDeepLinksDebug UP-TO-DATE
+> Task :app:processDebugMainManifest UP-TO-DATE
+> Task :app:processDebugManifest UP-TO-DATE
+> Task :app:processDebugManifestForPackage UP-TO-DATE
+> Task :app:processDebugResources UP-TO-DATE
+> Task :app:javaPreCompileDebug
+> Task :app:mergeDebugShaders
+> Task :app:compileDebugShaders NO-SOURCE
+> Task :app:generateDebugAssets UP-TO-DATE
+> Task :app:mergeDebugAssets
+> Task :app:compressDebugAssets
+> Task :app:desugarDebugFileDependencies
+> Task :app:mergeDebugJniLibFolders
+> Task :app:validateSigningDebug
+> Task :app:writeDebugAppMetadata
+> Task :app:checkDebugDuplicateClasses
+> Task :app:writeDebugSigningConfigVersions
+> Task :app:mergeDebugNativeLibs
+> Task :app:mergeLibDexDebug
+
+> Task :app:stripDebugDebugSymbols
+Unable to strip the following libraries, packaging them as they are: libarcore_sdk_c.so, libarcore_sdk_jni.so, libfilament-jni.so, libfilament-utils-jni.so, libgltfio-jni.so, libimage_processing_util_jni.so. Run with --info option to learn more.
+
+> Task :app:mergeExtDexDebug
+
+> Task :app:compileDebugKotlin
+w: file:///D:/Hackathons/TechSprint%202.0%20proj/Phantom%20Crowd/app/src/main/java/com/phantomcrowd/ar/CloudAnchorSyncManager.kt:33:35 'hostCloudAnchor(Anchor!): Anchor' is deprecated. Deprecated in Java
+w: file:///D:/Hackathons/TechSprint%202.0%20proj/Phantom%20Crowd/app/src/main/java/com/phantomcrowd/ar/CloudAnchorSyncManager.kt:38:26 'getter for cloudAnchorState: Anchor.CloudAnchorState' is deprecated. Deprecated in Java
+w: file:///D:/Hackathons/TechSprint%202.0%20proj/Phantom%20Crowd/app/src/main/java/com/phantomcrowd/ar/CloudAnchorSyncManager.kt:39:41 'getter for cloudAnchorId: String' is deprecated. Deprecated in Java
+w: file:///D:/Hackathons/TechSprint%202.0%20proj/Phantom%20Crowd/app/src/main/java/com/phantomcrowd/ar/CloudAnchorSyncManager.kt:54:72 'getter for cloudAnchorState: Anchor.CloudAnchorState' is deprecated. Deprecated in Java
+w: file:///D:/Hackathons/TechSprint%202.0%20proj/Phantom%20Crowd/app/src/main/java/com/phantomcrowd/ar/CloudAnchorSyncManager.kt:55:78 'getter for cloudAnchorState: Anchor.CloudAnchorState' is deprecated. Deprecated in Java
+w: file:///D:/Hackathons/TechSprint%202.0%20proj/Phantom%20Crowd/app/src/main/java/com/phantomcrowd/ar/CloudAnchorSyncManager.kt:65:35 'resolveCloudAnchor(String!): Anchor' is deprecated. Deprecated in Java
+w: file:///D:/Hackathons/TechSprint%202.0%20proj/Phantom%20Crowd/app/src/main/java/com/phantomcrowd/ar/CloudAnchorSyncManager.kt:68:26 'getter for cloudAnchorState: Anchor.CloudAnchorState' is deprecated. Deprecated in Java
+w: file:///D:/Hackathons/TechSprint%202.0%20proj/Phantom%20Crowd/app/src/main/java/com/phantomcrowd/ar/CloudAnchorSyncManager.kt:72:72 'getter for cloudAnchorState: Anchor.CloudAnchorState' is deprecated. Deprecated in Java
+w: file:///D:/Hackathons/TechSprint%202.0%20proj/Phantom%20Crowd/app/src/main/java/com/phantomcrowd/ar/CloudAnchorSyncManager.kt:83:23 'getter for cloudAnchorState: Anchor.CloudAnchorState' is deprecated. Deprecated in Java
+w: file:///D:/Hackathons/TechSprint%202.0%20proj/Phantom%20Crowd/app/src/main/java/com/phantomcrowd/ar/CloudAnchorSyncManager.kt:83:67 'TASK_IN_PROGRESS' is deprecated. Deprecated in Java
+w: file:///D:/Hackathons/TechSprint%202.0%20proj/Phantom%20Crowd/app/src/main/java/com/phantomcrowd/ar/VoiceGuidanceManager.kt:54:34 This declaration overrides deprecated member but not marked as deprecated itself. Please add @Deprecated annotation or suppress. See https://youtrack.jetbrains.com/issue/KT-47902 for details
+w: file:///D:/Hackathons/TechSprint%202.0%20proj/Phantom%20Crowd/app/src/main/java/com/phantomcrowd/data/SurfaceAnchorManager.kt:112:42 Parameter 'normal' is never used
+w: file:///D:/Hackathons/TechSprint%202.0%20proj/Phantom%20Crowd/app/src/main/java/com/phantomcrowd/ui/ARNavigationScreen.kt:414:5 Parameter 'executor' is never used
+w: file:///D:/Hackathons/TechSprint%202.0%20proj/Phantom%20Crowd/app/src/main/java/com/phantomcrowd/ui/ARViewScreen.kt:55:5 Parameter 'onClose' is never used
+w: file:///D:/Hackathons/TechSprint%202.0%20proj/Phantom%20Crowd/app/src/main/java/com/phantomcrowd/ui/ARViewScreen.kt:407:5 Parameter 'executor' is never used
+w: file:///D:/Hackathons/TechSprint%202.0%20proj/Phantom%20Crowd/app/src/main/java/com/phantomcrowd/ui/MainViewModel.kt:355:51 Parameter 'location' is never used, could be renamed to _
+w: file:///D:/Hackathons/TechSprint%202.0%20proj/Phantom%20Crowd/app/src/main/java/com/phantomcrowd/ui/PostIssueScreen.kt:30:9 Variable 'scope' is never used
+w: file:///D:/Hackathons/TechSprint%202.0%20proj/Phantom%20Crowd/app/src/main/java/com/phantomcrowd/ui/SurfaceAnchorScreen.kt:55:9 Variable 'context' is never used
+w: file:///D:/Hackathons/TechSprint%202.0%20proj/Phantom%20Crowd/app/src/main/java/com/phantomcrowd/ui/SurfaceAnchorScreen.kt:72:9 Variable 'requiredStableTime' is never used
+w: file:///D:/Hackathons/TechSprint%202.0%20proj/Phantom%20Crowd/app/src/main/java/com/phantomcrowd/ui/components/MessageCard.kt:35:5 Parameter 'onClick' is never used
+w: file:///D:/Hackathons/TechSprint%202.0%20proj/Phantom%20Crowd/app/src/main/java/com/phantomcrowd/ui/components/MiniMapOverlay.kt:29:5 Parameter 'heading' is never used
+w: file:///D:/Hackathons/TechSprint%202.0%20proj/Phantom%20Crowd/app/src/main/java/com/phantomcrowd/ui/tabs/MapDiscoveryTab.kt:207:41 Parameter 'context' is never used
+w: file:///D:/Hackathons/TechSprint%202.0%20proj/Phantom%20Crowd/app/src/main/java/com/phantomcrowd/ui/theme/Theme.kt:49:20 'setter for statusBarColor: Int' is deprecated. Deprecated in Java
+
+> Task :app:compileDebugJavaWithJavac NO-SOURCE
+> Task :app:processDebugJavaRes
+> Task :app:dexBuilderDebug
+> Task :app:mergeProjectDexDebug
+> Task :app:mergeDebugJavaResource
+> Task :app:packageDebug
+> Task :app:createDebugApkListingFileRedirect
+> Task :app:assembleDebug
+[Incubating] Problems report is available at: file:///D:/Hackathons/TechSprint%202.0%20proj/Phantom%20Crowd/build/reports/problems/problems-report.html
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 9.0.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/8.11.1/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD SUCCESSFUL in 35s
+38 actionable tasks: 22 executed, 16 up-to-date
