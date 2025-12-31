@@ -373,33 +373,68 @@ fun SurfaceAnchorScreen(
             // PLACE button
             Button(
                 onClick = {
-                    if (!isPlacing && bestPlane != null && userLocation != null) {
+                    if (!isPlacing && userLocation != null) {
                         isPlacing = true
                         errorMessage = null
                         
-                        try {
-                            val plane = bestPlane!!
-                            val hitPose = plane.centerPose
+                        // Robust placement with defensive checks
+                        val placementResult = try {
+                            // Step 1: Validate bestPlane exists and is still tracking
+                            val plane = bestPlane
+                            if (plane == null) {
+                                errorMessage = "No surface detected - point camera at a flat surface"
+                                isPlacing = false
+                                return@Button
+                            }
                             
-                            // Validate plane size
-                            val extent = plane.extentX.coerceAtMost(plane.extentZ)
+                            // Step 2: Check plane is still actively tracking
+                            if (plane.trackingState != TrackingState.TRACKING) {
+                                errorMessage = "Surface lost - please rescan"
+                                isPlacing = false
+                                return@Button
+                            }
+                            
+                            // Step 3: Safely get plane pose with try-catch for ARCore native errors
+                            val hitPose: Pose = try {
+                                plane.centerPose
+                            } catch (e: Exception) {
+                                Logger.w(Logger.Category.AR, "Failed to get plane centerPose: ${e.message}")
+                                errorMessage = "Surface unstable - please try again"
+                                isPlacing = false
+                                return@Button
+                            }
+                            
+                            // Step 4: Validate plane size
+                            val extentX = try { plane.extentX } catch (e: Exception) { 0f }
+                            val extentZ = try { plane.extentZ } catch (e: Exception) { 0f }
+                            val extent = extentX.coerceAtMost(extentZ)
+                            
                             if (extent < 0.15f) {
                                 errorMessage = "Surface too small - find a larger area"
                                 isPlacing = false
                                 return@Button
                             }
                             
-                            // Get surface normal
+                            // Step 5: Safely extract pose data
+                            val zAxis = try { hitPose.zAxis } catch (e: Exception) { floatArrayOf(0f, 0f, 1f) }
                             val surfaceNormal = floatArrayOf(
-                                hitPose.zAxis[0],
-                                hitPose.zAxis[1],
-                                hitPose.zAxis[2]
+                                zAxis.getOrElse(0) { 0f },
+                                zAxis.getOrElse(1) { 0f },
+                                zAxis.getOrElse(2) { 1f }
                             )
                             
-                            // Calculate offset
-                            val offset = SurfaceAnchorManager.calculateOffset(hitPose)
+                            // Step 6: Calculate offset using safe pose translation
+                            val translation = try { hitPose.translation } catch (e: Exception) { floatArrayOf(0f, 0f, 0f) }
+                            val offset = Triple(
+                                translation.getOrElse(0) { 0f },
+                                translation.getOrElse(1) { 0f },
+                                translation.getOrElse(2) { 0f }
+                            )
                             
-                            // Create anchor
+                            // Step 7: Get plane type safely
+                            val planeTypeName = try { plane.type.name } catch (e: Exception) { "HORIZONTAL_UPWARD_FACING" }
+                            
+                            // Step 8: Create anchor data
                             val anchor = SurfaceAnchor(
                                 messageText = messageText,
                                 category = category,
@@ -411,7 +446,7 @@ fun SurfaceAnchorScreen(
                                 relativeOffsetX = offset.first,
                                 relativeOffsetY = offset.second,
                                 relativeOffsetZ = offset.third,
-                                planeType = plane.type.name,
+                                planeType = planeTypeName,
                                 surfaceNormalX = surfaceNormal[0],
                                 surfaceNormalY = surfaceNormal[1],
                                 surfaceNormalZ = surfaceNormal[2],
@@ -419,16 +454,29 @@ fun SurfaceAnchorScreen(
                             )
                             
                             Logger.i(Logger.Category.AR, "Created anchor at offset (${offset.first}, ${offset.second}, ${offset.third})")
-                            placementSuccess = true
+                            anchor // Return the anchor as success
                             
-                            scope.launch {
-                                delay(800)
-                                onAnchorPlaced(anchor)
-                            }
-                            
+                        } catch (e: android.os.DeadObjectException) {
+                            Logger.e(Logger.Category.AR, "ARCore session died", e)
+                            errorMessage = "AR session error - please restart"
+                            null
+                        } catch (e: IllegalStateException) {
+                            Logger.e(Logger.Category.AR, "ARCore illegal state", e)
+                            errorMessage = "AR state error - please try again"
+                            null
                         } catch (e: Exception) {
                             Logger.e(Logger.Category.AR, "Placement failed", e)
-                            errorMessage = "Placement failed: ${e.message}"
+                            errorMessage = "Placement failed: ${e.message ?: "Unknown error"}"
+                            null
+                        }
+                        
+                        if (placementResult != null) {
+                            placementSuccess = true
+                            scope.launch {
+                                delay(800)
+                                onAnchorPlaced(placementResult)
+                            }
+                        } else {
                             isPlacing = false
                         }
                     }
