@@ -5,6 +5,7 @@ import java.util.UUID
 import kotlinx.serialization.Serializable
 /**
  * Data class representing an issue/message anchored at a specific geospatial location.
+ * Simplified version without photo fields (no Firebase Storage required).
  */
 @Serializable
 data class AnchorData(
@@ -22,10 +23,6 @@ data class AnchorData(
     val geohash: String = "",  // For efficient location queries in Firestore
     val cloudAnchorId: String = "",  // For cloud AR anchor persistence
     val upvotes: Int = 0,  // Community validation count
-    // Phase F: Wall Overlay Posting
-    val photoUrl: String = "",  // Firebase Storage URL for photo attachment
-    val captureTime: Long = 0L,  // Photo capture timestamp
+    // Phase F: Wall Overlay Posting (simplified - no photo)
     val wallAnchorId: String = ""  // Unique wall surface identifier
 )
-
-

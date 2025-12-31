@@ -1,40 +1,24 @@
 package com.phantomcrowd.ui
 
-import android.content.Context
-import android.net.Uri
 import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import coil.compose.rememberAsyncImagePainter
 import com.phantomcrowd.data.AnchorData
 import com.phantomcrowd.utils.Logger
-import com.google.firebase.storage.FirebaseStorage
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.tasks.await
-import java.io.File
 import java.util.UUID
 
 /**
- * Modern SceneView-ready Posting Screen.
+ * Simplified Posting Screen - Text-only issue reporting.
  * Features:
  * - Form-based input for message and category
- * - Photo capture using device camera
- * - Firebase Storage upload for photos
  * - Location-based posting
+ * - Firestore upload (no Firebase Storage required)
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -51,40 +35,16 @@ fun PostCreationARScreen(
     var messageText by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf("General") }
     var isPosting by remember { mutableStateOf(false) }
-    var photoUri by remember { mutableStateOf<Uri?>(null) }
-    var isUploadingPhoto by remember { mutableStateOf(false) }
     
     val categories = listOf("General", "Infrastructure", "Safety", "Environment", "Other")
     val currentLocation by viewModel.currentLocation.collectAsState()
-    
-    // Create temp file for photo
-    val tempPhotoFile = remember {
-        File.createTempFile("issue_photo_", ".jpg", context.cacheDir)
-    }
-    val tempPhotoUri = remember {
-        androidx.core.content.FileProvider.getUriForFile(
-            context,
-            "${context.packageName}.provider",
-            tempPhotoFile
-        )
-    }
-    
-    // Camera launcher
-    val takePictureLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.TakePicture()
-    ) { success ->
-        if (success) {
-            photoUri = tempPhotoUri
-            Logger.d(Logger.Category.AR, "Photo captured: $photoUri")
-        }
-    }
     
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Text(
             "📍 Report Issue",
@@ -93,99 +53,45 @@ fun PostCreationARScreen(
         
         // Location status
         if (currentLocation == null) {
-            Text(
-                "📍 Getting location...",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.primary
-            )
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                )
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp
+                    )
+                    Text(
+                        "Getting your location...",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            }
             LaunchedEffect(Unit) {
                 viewModel.updateLocation()
             }
         } else {
-            Text(
-                "📍 ${String.format("%.5f", currentLocation!!.latitude)}, ${String.format("%.5f", currentLocation!!.longitude)}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.secondary
-            )
-        }
-        
-        // Photo section
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surfaceVariant
-            )
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer
+                )
             ) {
-                if (photoUri != null) {
-                    // Show captured photo
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(150.dp)
-                    ) {
-                        Image(
-                            painter = rememberAsyncImagePainter(photoUri),
-                            contentDescription = "Captured photo",
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .clip(RoundedCornerShape(8.dp)),
-                            contentScale = ContentScale.Crop
-                        )
-                        
-                        // Remove photo button
-                        IconButton(
-                            onClick = { photoUri = null },
-                            modifier = Modifier.align(Alignment.TopEnd)
-                        ) {
-                            Icon(
-                                Icons.Default.Close,
-                                contentDescription = "Remove photo",
-                                tint = MaterialTheme.colorScheme.error
-                            )
-                        }
-                    }
-                } else {
-                    // Take photo button
-                    OutlinedButton(
-                        onClick = {
-                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
-                            takePictureLauncher.launch(tempPhotoUri)
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(100.dp)
-                            .border(
-                                2.dp,
-                                MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
-                                RoundedCornerShape(8.dp)
-                            )
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
-                                text = "📷",
-                                style = MaterialTheme.typography.headlineLarge
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text("Take Photo")
-                        }
-                    }
-                }
-                
-                if (photoUri != null) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Text(
-                        "✅ Photo attached",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                } else {
-                    Text(
-                        "Optional: Add a photo of the issue",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        "📍 ${String.format("%.5f", currentLocation!!.latitude)}, ${String.format("%.5f", currentLocation!!.longitude)}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer
                     )
                 }
             }
@@ -194,12 +100,14 @@ fun PostCreationARScreen(
         // Message input
         OutlinedTextField(
             value = messageText,
-            onValueChange = { if (it.length <= 200) messageText = it },
-            label = { Text("Describe the issue") },
+            onValueChange = { if (it.length <= 300) messageText = it },
+            label = { Text("Describe the issue in detail") },
+            placeholder = { Text("e.g., Broken streetlight near the park entrance...") },
             modifier = Modifier.fillMaxWidth(),
-            maxLines = 3,
+            minLines = 3,
+            maxLines = 5,
             supportingText = {
-                Text("${messageText.length}/200")
+                Text("${messageText.length}/300 characters")
             }
         )
         
@@ -231,6 +139,27 @@ fun PostCreationARScreen(
                         }
                     )
                 }
+            }
+        }
+        
+        // Tips card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Text(
+                    "💡 Tips for a good report:",
+                    style = MaterialTheme.typography.labelLarge
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    "• Be specific about the location\n• Describe what needs to be fixed\n• Mention any safety concerns",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
         
@@ -270,22 +199,8 @@ fun PostCreationARScreen(
                     scope.launch {
                         try {
                             val issueId = UUID.randomUUID().toString()
-                            var photoUrl = ""
                             
-                            // Upload photo if present
-                            if (photoUri != null) {
-                                isUploadingPhoto = true
-                                try {
-                                    photoUrl = uploadPhotoToFirebase(context, photoUri!!, issueId)
-                                    Logger.d(Logger.Category.DATA, "Photo uploaded: $photoUrl")
-                                } catch (e: Exception) {
-                                    Logger.e(Logger.Category.DATA, "Photo upload failed", e)
-                                    // Continue without photo
-                                }
-                                isUploadingPhoto = false
-                            }
-                            
-                            // Create anchor data
+                            // Create anchor data (no photo)
                             val anchorData = AnchorData(
                                 id = issueId,
                                 latitude = currentLocation!!.latitude,
@@ -294,11 +209,10 @@ fun PostCreationARScreen(
                                 messageText = messageText,
                                 category = selectedCategory.lowercase(),
                                 timestamp = System.currentTimeMillis(),
-                                wallAnchorId = "wall-${UUID.randomUUID()}",
-                                photoUrl = photoUrl
+                                wallAnchorId = "wall-${UUID.randomUUID()}"
                             )
                             
-                            // Upload to Firebase
+                            // Upload to Firebase Firestore
                             viewModel.uploadIssueSafely(anchorData)
                             
                             Toast.makeText(context, "Issue reported! 🎉", Toast.LENGTH_SHORT).show()
@@ -327,7 +241,7 @@ fun PostCreationARScreen(
                             color = MaterialTheme.colorScheme.onPrimary,
                             strokeWidth = 2.dp
                         )
-                        Text(if (isUploadingPhoto) "Uploading..." else "Posting...")
+                        Text("Posting...")
                     }
                 } else {
                     Text("📤 Post Issue")
@@ -335,18 +249,4 @@ fun PostCreationARScreen(
             }
         }
     }
-}
-
-/**
- * Upload photo to Firebase Storage
- */
-private suspend fun uploadPhotoToFirebase(context: Context, uri: Uri, issueId: String): String {
-    val storage = FirebaseStorage.getInstance()
-    val ref = storage.reference.child("issues/$issueId/photo.jpg")
-    
-    val inputStream = context.contentResolver.openInputStream(uri)
-        ?: throw Exception("Cannot read photo file")
-    
-    val uploadTask = ref.putStream(inputStream).await()
-    return ref.downloadUrl.await().toString()
 }
