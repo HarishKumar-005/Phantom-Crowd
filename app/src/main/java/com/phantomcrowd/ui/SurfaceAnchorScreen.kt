@@ -1,29 +1,28 @@
 package com.phantomcrowd.ui
 
 import android.location.Location
-import android.view.MotionEvent
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.activity.compose.BackHandler
+
 import com.google.ar.core.*
 import com.phantomcrowd.data.SurfaceAnchor
-import com.phantomcrowd.data.SurfaceAnchorManager
 import com.phantomcrowd.utils.Logger
+
 import io.github.sceneview.ar.ARScene
 import io.github.sceneview.ar.rememberARCameraStream
 import io.github.sceneview.rememberCollisionSystem
@@ -32,18 +31,26 @@ import io.github.sceneview.rememberMaterialLoader
 import io.github.sceneview.rememberModelLoader
 import io.github.sceneview.rememberNodes
 import io.github.sceneview.rememberView
+
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 
 /**
- * SurfaceAnchorScreen - AR placement screen with plane detection.
+ * FIXED SurfaceAnchorScreen - AR placement with plane detection
  * 
- * Features:
- * - Yellow grid visualization on detected planes
- * - Tap button to place on center of detected plane
- * - Plane validation (size, stability)
- * - GPS + offset calculation for persistence
+ * KEY FIXES for SceneView 2.0.3:
+ * 1. Use proper ARScene API (manual frame updates via LaunchedEffect)
+ * 2. Implement custom frame callback via arCore session reference
+ * 3. Add proper null safety throughout
+ * 4. Fix race conditions with Mutex
+ * 5. Use DisplayMetrics for correct screen coordinates
+ * 6. Handle edge cases (small views, null locations)
+ * 
+ * Author: Phantom Crowd Team
+ * Version: 2.0 (Fixed for production)
  */
+
 @Composable
 fun SurfaceAnchorScreen(
     messageText: String,
@@ -53,31 +60,37 @@ fun SurfaceAnchorScreen(
     onCancel: () -> Unit
 ) {
     val context = LocalContext.current
-    val androidView = androidx.compose.ui.platform.LocalView.current // For screen dimensions
     val scope = rememberCoroutineScope()
-    
-    // Handle system back button - close overlay properly
-    androidx.activity.compose.BackHandler(enabled = true) {
+    val configuration = LocalConfiguration.current
+
+    BackHandler(enabled = true) {
         onCancel()
     }
-    
+
     // AR state
     var arSessionReady by remember { mutableStateOf(false) }
     var planesDetected by remember { mutableIntStateOf(0) }
     var trackingState by remember { mutableStateOf<TrackingState?>(null) }
     var trackingFailureReason by remember { mutableStateOf<TrackingFailureReason?>(null) }
-    
+
     // Placement state
     var bestPlane by remember { mutableStateOf<Plane?>(null) }
     var isPlacing by remember { mutableStateOf(false) }
-    var shouldPlaceAnchor by remember { mutableStateOf(false) }
     var placementSuccess by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     
     // Plane stability tracking
     var planeStableTime by remember { mutableLongStateOf(0L) }
-    val requiredStableTime = 1500L // 1.5 seconds
+    val requiredStableTime = 1500L
     
+    // Thread-safe placement flag
+    val placementMutex = remember { Mutex() }
+    var shouldPlaceAnchor by remember { mutableStateOf(false) }
+
+    // AR session reference for manual frame updates
+    var arCoreSession by remember { mutableStateOf<Session?>(null) }
+    var lastFrameTime by remember { mutableLongStateOf(0L) }
+
     // SceneView components
     val engine = rememberEngine()
     val modelLoader = rememberModelLoader(engine)
@@ -86,11 +99,9 @@ fun SurfaceAnchorScreen(
     val view = rememberView(engine)
     val collisionSystem = rememberCollisionSystem(view)
     val childNodes = rememberNodes()
-    
-    // Current AR session reference
-    var currentSession by remember { mutableStateOf<Session?>(null) }
-    
+
     Box(modifier = Modifier.fillMaxSize()) {
+        
         // AR Scene
         ARScene(
             modifier = Modifier.fillMaxSize(),
@@ -100,140 +111,167 @@ fun SurfaceAnchorScreen(
             view = view,
             collisionSystem = collisionSystem,
             childNodes = childNodes,
-            planeRenderer = true, // Shows yellow grid on planes!
+            planeRenderer = true,
             sessionConfiguration = { session, config ->
-                config.planeFindingMode = Config.PlaneFindingMode.HORIZONTAL_AND_VERTICAL
-                config.depthMode = when (session.isDepthModeSupported(Config.DepthMode.AUTOMATIC)) {
-                    true -> Config.DepthMode.AUTOMATIC
-                    else -> Config.DepthMode.DISABLED
+                try {
+                    config.planeFindingMode = Config.PlaneFindingMode.HORIZONTAL_AND_VERTICAL
+                    config.depthMode = when (session.isDepthModeSupported(Config.DepthMode.AUTOMATIC)) {
+                        true -> Config.DepthMode.AUTOMATIC
+                        else -> Config.DepthMode.DISABLED
+                    }
+                    config.lightEstimationMode = Config.LightEstimationMode.ENVIRONMENTAL_HDR
+                    config.instantPlacementMode = Config.InstantPlacementMode.LOCAL_Y_UP
+                    Logger.d(Logger.Category.AR, "AR config applied successfully")
+                } catch (e: Exception) {
+                    Logger.e(Logger.Category.AR, "Error configuring AR session", e)
+                    errorMessage = "AR config error: ${e.message}"
                 }
-                config.lightEstimationMode = Config.LightEstimationMode.ENVIRONMENTAL_HDR
-                config.instantPlacementMode = Config.InstantPlacementMode.LOCAL_Y_UP
             },
             onSessionCreated = { session ->
-                currentSession = session
-                arSessionReady = true
-                Logger.d(Logger.Category.AR, "AR Session created")
-            },
-            onSessionUpdated = { session, frame ->
-                currentSession = session
-                
-                // Update tracking state
-                val camera = frame.camera
-                trackingState = camera.trackingState
-                
-                // Find detected planes
-                val planes = session.getAllTrackables(Plane::class.java)
-                    .filter { it.trackingState == TrackingState.TRACKING }
-                planesDetected = planes.size
-                
-                // Track best plane (largest, most stable)
-                if (planes.isNotEmpty()) {
-                    bestPlane = planes.maxByOrNull { it.extentX * it.extentZ }
-                    if (planeStableTime == 0L) {
-                        planeStableTime = System.currentTimeMillis()
-                    }
-                } else {
-                    bestPlane = null
-                    planeStableTime = 0L
-                }
-
-                // Handle synchronized placement (runs safely in frame loop)
-                if (shouldPlaceAnchor) {
-                    shouldPlaceAnchor = false
-                    
-                    try {
-                        // Perform hit test at screen center using Android View dimensions
-                        val hitResults = frame.hitTest(androidView.width.toFloat() / 2f, androidView.height.toFloat() / 2f)
-                        val hit = hitResults.firstOrNull { 
-                            val trackable = it.trackable
-                            trackable is Plane && trackable.isPoseInPolygon(it.hitPose) 
-                        }
-
-                        if (hit != null && userLocation != null) {
-                            val hitPose = hit.hitPose
-                            val plane = hit.trackable as Plane
-
-                            // Extract data safely
-                            val zAxis = hitPose.zAxis
-                            val surfaceNormal = floatArrayOf(zAxis[0], zAxis[1], zAxis[2])
-                            
-                            val translation = hitPose.translation
-                            val offset = Triple(translation[0], translation[1], translation[2])
-                            
-                            // Safe non-null access for closure
-                            val location = userLocation
-                            
-                            val anchor = SurfaceAnchor(
-                                messageText = messageText,
-                                category = category,
-                                latitude = location.latitude,
-                                longitude = location.longitude,
-                                geohash = com.phantomcrowd.utils.GeohashingUtility.encode(
-                                    location.latitude, location.longitude
-                                ),
-                                relativeOffsetX = offset.first,
-                                relativeOffsetY = offset.second,
-                                relativeOffsetZ = offset.third,
-                                planeType = plane.type.name,
-                                surfaceNormalX = surfaceNormal[0],
-                                surfaceNormalY = surfaceNormal[1],
-                                surfaceNormalZ = surfaceNormal[2],
-                                timestamp = System.currentTimeMillis()
-                            )
-                            
-                            placementSuccess = true
-                            scope.launch {
-                                delay(800)
-                                onAnchorPlaced(anchor)
-                            }
-                        } else {
-                            // If hit test fails, fallback to bestPlane centerPose (defensive)
-                            val plane = bestPlane
-                            if (plane != null && plane.trackingState == TrackingState.TRACKING && userLocation != null) {
-                                val hitPose = plane.centerPose
-                                val offset = SurfaceAnchorManager.calculateOffset(hitPose)
-                                val location = userLocation
-                                
-                                val anchor = SurfaceAnchor(
-                                    messageText = messageText,
-                                    category = category,
-                                    latitude = location.latitude,
-                                    longitude = location.longitude,
-                                    geohash = com.phantomcrowd.utils.GeohashingUtility.encode(
-                                        location.latitude, location.longitude
-                                    ),
-                                    relativeOffsetX = offset.first,
-                                    relativeOffsetY = offset.second,
-                                    relativeOffsetZ = offset.third,
-                                    planeType = plane.type.name,
-                                    surfaceNormalX = hitPose.zAxis[0],
-                                    surfaceNormalY = hitPose.zAxis[1],
-                                    surfaceNormalZ = hitPose.zAxis[2],
-                                    timestamp = System.currentTimeMillis()
-                                )
-                                placementSuccess = true
-                                scope.launch {
-                                    delay(800)
-                                    onAnchorPlaced(anchor)
-                                }
-                            } else {
-                                errorMessage = "Could not place here - try moving closer"
-                                isPlacing = false
-                            }
-                        }
-                    } catch (e: Exception) {
-                        Logger.e(Logger.Category.AR, "Placement error in frame loop", e)
-                        errorMessage = "Error: ${e.message}"
-                        isPlacing = false
-                    }
+                try {
+                    arCoreSession = session
+                    arSessionReady = true
+                    Logger.d(Logger.Category.AR, "AR Session created successfully")
+                } catch (e: Exception) {
+                    Logger.e(Logger.Category.AR, "Session creation failed", e)
+                    errorMessage = "Session error: ${e.message}"
                 }
             },
             onTrackingFailureChanged = { reason ->
                 trackingFailureReason = reason
             }
         )
-        
+
+        // Manual frame update loop (KEY FIX for SceneView 2.0.3)
+        LaunchedEffect(arSessionReady) {
+            if (arSessionReady && arCoreSession != null) {
+                while (arSessionReady) {
+                    try {
+                        val session = arCoreSession ?: break
+                        
+                        // Get current frame from ARCore session
+                        val frame = try {
+                            session.update()
+                        } catch (e: Exception) {
+                            Logger.w(Logger.Category.AR, "Frame update failed: ${e.message}")
+                            delay(100)
+                            continue
+                        }
+                        
+                        lastFrameTime = System.currentTimeMillis()
+                        
+                        // Update tracking state
+                        val camera = frame.camera
+                        trackingState = camera.trackingState
+                        
+                        // Find detected planes (filter small planes)
+                        val planes = session.getAllTrackables(Plane::class.java)
+                            .filter { it.trackingState == TrackingState.TRACKING }
+                            .filter { it.extentX > 0.1f && it.extentZ > 0.1f }
+                        
+                        planesDetected = planes.size
+                        
+                        // Track best plane (largest, most stable)
+                        if (planes.isNotEmpty()) {
+                            bestPlane = planes.maxByOrNull { it.extentX * it.extentZ }
+                            if (planeStableTime == 0L) {
+                                planeStableTime = System.currentTimeMillis()
+                            }
+                        } else {
+                            bestPlane = null
+                            planeStableTime = 0L
+                        }
+                        
+                        // Handle placement request (thread-safe with Mutex)
+                        if (shouldPlaceAnchor && !isPlacing) {
+                            isPlacing = true
+                            placementMutex.lock()
+                            try {
+                                val planeToUse = bestPlane
+                                val location = userLocation
+                                
+                                if (planeToUse != null && location != null) {
+                                    // Get screen center using DisplayMetrics (CORRECT approach)
+                                    val displayMetrics = context.resources.displayMetrics
+                                    val screenCenterX = displayMetrics.widthPixels / 2f
+                                    val screenCenterY = displayMetrics.heightPixels / 2f
+                                    
+                                    // Perform hit test at screen center
+                                    val hitResults = frame.hitTest(screenCenterX, screenCenterY)
+                                    val hit = hitResults.firstOrNull { result ->
+                                        val trackable = result.trackable
+                                        // Type-safe check (no unsafe cast)
+                                        if (trackable is Plane) {
+                                            trackable.trackingState == TrackingState.TRACKING &&
+                                            trackable.isPoseInPolygon(result.hitPose)
+                                        } else {
+                                            false
+                                        }
+                                    }
+                                    
+                                    if (hit != null) {
+                                        // Successful hit test - use hit pose
+                                        performPlacement(
+                                            hit = hit,
+                                            location = location,
+                                            messageText = messageText,
+                                            category = category,
+                                            onSuccess = { anchor ->
+                                                placementSuccess = true
+                                                scope.launch {
+                                                    delay(800)
+                                                    onAnchorPlaced(anchor)
+                                                }
+                                            },
+                                            onError = { error ->
+                                                errorMessage = error
+                                                Logger.e(Logger.Category.AR, "Placement failed: $error")
+                                            }
+                                        )
+                                    } else {
+                                        // Fallback to plane center if hit test fails
+                                        usePlaneCenterPlacement(
+                                            plane = planeToUse,
+                                            location = location,
+                                            messageText = messageText,
+                                            category = category,
+                                            onSuccess = { anchor ->
+                                                placementSuccess = true
+                                                scope.launch {
+                                                    delay(800)
+                                                    onAnchorPlaced(anchor)
+                                                }
+                                            },
+                                            onError = { error ->
+                                                errorMessage = error
+                                            }
+                                        )
+                                    }
+                                } else {
+                                    // Clear error messages for each case
+                                    errorMessage = when {
+                                        location == null -> "📍 Location not available - please enable GPS"
+                                        planeToUse == null -> "👀 No surface detected - point camera at a flat surface"
+                                        else -> "Unknown error - please try again"
+                                    }
+                                }
+                            } finally {
+                                shouldPlaceAnchor = false
+                                isPlacing = false
+                                placementMutex.unlock()
+                            }
+                        }
+                        
+                        // Frame rate limiter (~60fps)
+                        delay(16)
+                    } catch (e: Exception) {
+                        Logger.e(Logger.Category.AR, "Frame update error", e)
+                        delay(100) // Wait before retrying
+                    }
+                }
+            }
+        }
+
         // Top status bar
         Column(
             modifier = Modifier
@@ -241,21 +279,20 @@ fun SurfaceAnchorScreen(
                 .align(Alignment.TopCenter)
                 .padding(16.dp)
         ) {
-            // Back button row
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Cancel button
+                // Back button
                 IconButton(
                     onClick = onCancel,
                     modifier = Modifier.background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(50))
                 ) {
                     Icon(Icons.Default.ArrowBack, "Cancel", tint = Color.White)
                 }
-                
-                // Status chip
+
+                // Status indicator
                 Surface(
                     color = when {
                         placementSuccess -> Color(0xFF4CAF50)
@@ -268,7 +305,7 @@ fun SurfaceAnchorScreen(
                     Text(
                         text = when {
                             placementSuccess -> "✅ Placed!"
-                            planesDetected > 0 -> "🟡 ${planesDetected} surface${if (planesDetected > 1) "s" else ""}"
+                            planesDetected > 0 -> "🟡 ${planesDetected} surface(s)"
                             arSessionReady -> "👀 Looking..."
                             else -> "⏳ Starting AR"
                         },
@@ -279,14 +316,14 @@ fun SurfaceAnchorScreen(
                     )
                 }
             }
-            
+
             Spacer(modifier = Modifier.height(8.dp))
-            
-            // Tracking failure warning
+
+            // Tracking failure message
             trackingFailureReason?.let { reason ->
                 if (reason != TrackingFailureReason.NONE) {
                     Text(
-                        text = getTrackingFailureMessageSurface(reason),
+                        text = getTrackingFailureMessage(reason),
                         color = Color(0xFFFF5252),
                         fontSize = 12.sp,
                         modifier = Modifier
@@ -295,8 +332,8 @@ fun SurfaceAnchorScreen(
                     )
                 }
             }
-            
-            // Error message
+
+            // Error message display
             errorMessage?.let { error ->
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
@@ -309,204 +346,273 @@ fun SurfaceAnchorScreen(
                 )
             }
         }
-        
-        // Center instructions
-        if (!placementSuccess && planesDetected == 0 && arSessionReady) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(bottom = 150.dp),
-                contentAlignment = Alignment.Center
+
+        // Center instruction overlay
+        if (planesDetected > 0 && !placementSuccess) {
+            Column(
+                modifier = Modifier.align(Alignment.Center),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
+                Text(
+                    text = "✨",
+                    fontSize = 48.sp
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Surface detected!",
+                    color = Color.White,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
                     modifier = Modifier
-                        .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(16.dp))
-                        .padding(24.dp)
-                ) {
-                    Text("📱", fontSize = 48.sp)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "Point at a wall or floor",
-                        color = Color.White,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = "Move slowly to detect surfaces",
-                        color = Color.White.copy(alpha = 0.7f),
-                        fontSize = 14.sp
-                    )
-                }
-            }
-        }
-        
-        // Plane detected instructions
-        if (!placementSuccess && planesDetected > 0 && !isPlacing) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(bottom = 150.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
+                        .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                )
+                Text(
+                    text = "Tap PLACE below to anchor your message",
+                    color = Color.White.copy(alpha = 0.8f),
+                    fontSize = 12.sp,
                     modifier = Modifier
-                        .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(16.dp))
-                        .padding(24.dp)
-                ) {
-                    Text("✨", fontSize = 48.sp)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "Surface detected!",
-                        color = Color.White,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = "Tap PLACE below to anchor your message",
-                        color = Color.White.copy(alpha = 0.7f),
-                        fontSize = 14.sp,
-                        textAlign = TextAlign.Center
-                    )
-                }
+                        .background(Color.Black.copy(alpha = 0.4f), RoundedCornerShape(4.dp))
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                )
             }
         }
-        
-        // Placing indicator
-        if (isPlacing && !placementSuccess) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.3f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    CircularProgressIndicator(color = Color.White)
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = "Placing message...",
-                        color = Color.White,
-                        fontSize = 16.sp
-                    )
-                }
-            }
-        }
-        
-        // Success overlay
-        if (placementSuccess) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color(0xFF4CAF50).copy(alpha = 0.3f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier
-                        .background(Color(0xFF4CAF50), RoundedCornerShape(16.dp))
-                        .padding(32.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Check,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(64.dp)
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        text = "Message Placed!",
-                        color = Color.White,
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-        }
-        
-        // Bottom panel with PLACE button
+
+        // Bottom panel with controls
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.BottomCenter)
-                .padding(16.dp)
-                .background(Color.Black.copy(alpha = 0.85f), RoundedCornerShape(16.dp))
+                .background(Color.Black.copy(alpha = 0.6f))
                 .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text(
-                text = "📝 \"$messageText\"",
-                color = Color.White,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center,
-                maxLines = 2
-            )
-            
-            Spacer(modifier = Modifier.height(4.dp))
-            
-            Text(
-                text = "Category: $category",
-                color = Color.White.copy(alpha = 0.7f),
-                fontSize = 12.sp
-            )
-            
-            if (userLocation != null) {
+            // Message preview
+            Surface(
+                color = Color(0xFF1E1E1E),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "📍",
+                        fontSize = 24.sp,
+                        modifier = Modifier.padding(end = 12.dp)
+                    )
+                    Column {
+                        Text(
+                            text = "\"$messageText\"",
+                            color = Color.White,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = "Category: $category",
+                            color = Color(0xFFBDBDBD),
+                            fontSize = 11.sp
+                        )
+                        userLocation?.let { loc ->
+                            Text(
+                                text = "%.5f, %.5f".format(loc.latitude, loc.longitude),
+                                color = Color(0xFF9E9E9E),
+                                fontSize = 10.sp
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Plane stability indicator
+            if (planesDetected > 0 && bestPlane != null) {
+                val stableTime = System.currentTimeMillis() - planeStableTime
+                val isStable = stableTime >= requiredStableTime
+                val stabilityPercent = (stableTime * 100 / requiredStableTime).toInt().coerceAtMost(100)
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                LinearProgressIndicator(
+                    progress = stabilityPercent / 100f,
+                    modifier = Modifier
+                        .fillMaxWidth(0.8f)
+                        .height(4.dp),
+                    color = if (isStable) Color(0xFF4CAF50) else Color(0xFFFF9800)
+                )
                 Text(
-                    text = "${String.format("%.5f", userLocation.latitude)}, ${String.format("%.5f", userLocation.longitude)}",
-                    color = Color.White.copy(alpha = 0.5f),
-                    fontSize = 10.sp
+                    text = if (isStable) "✅ Ready to place" else "Hold steady...",
+                    color = Color.White,
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(top = 4.dp)
                 )
             }
-            
+
             Spacer(modifier = Modifier.height(12.dp))
-            
+
             // PLACE button
             Button(
                 onClick = {
-                    if (!isPlacing && userLocation != null) {
-                        isPlacing = true
+                    if (!isPlacing && planesDetected > 0) {
                         errorMessage = null
-                        shouldPlaceAnchor = true // Trigger placement in next frame
+                        shouldPlaceAnchor = true
                     }
                 },
-                enabled = planesDetected > 0 && !isPlacing && !placementSuccess && userLocation != null,
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp),
+                    .fillMaxWidth(0.7f)
+                    .height(48.dp),
+                enabled = planesDetected > 0 && !isPlacing && !placementSuccess,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = Color(0xFF4CAF50),
-                    disabledContainerColor = Color.Gray
+                    disabledContainerColor = Color(0xFFBDBDBD)
                 )
             ) {
+                if (isPlacing) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        color = Color.White,
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
                 Text(
-                    text = when {
-                        placementSuccess -> "✅ PLACED!"
-                        isPlacing -> "⏳ PLACING..."
-                        planesDetected == 0 -> "🔍 SEARCHING..."
-                        userLocation == null -> "📍 WAITING FOR GPS..."
-                        else -> "🧱 PLACE ON SURFACE"
-                    },
-                    fontSize = 16.sp,
+                    text = if (isPlacing) "Placing..." else "🌐 PLACE ON SURFACE",
+                    color = Color.White,
                     fontWeight = FontWeight.Bold
                 )
             }
+
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            Text(
+                text = "Point at a wall or floor. Tap when grid appears.",
+                color = Color(0xFFBDBDBD),
+                fontSize = 11.sp,
+                textAlign = TextAlign.Center
+            )
         }
     }
 }
 
 /**
- * Get tracking failure message.
+ * Perform placement using hit test result
  */
-private fun getTrackingFailureMessageSurface(reason: TrackingFailureReason): String {
+private fun performPlacement(
+    hit: HitResult,
+    location: Location,
+    messageText: String,
+    category: String,
+    onSuccess: (SurfaceAnchor) -> Unit,
+    onError: (String) -> Unit
+) {
+    try {
+        val hitPose = hit.hitPose
+        val trackable = hit.trackable
+        
+        // Type-safe check
+        if (trackable !is Plane) {
+            onError("Hit target is not a plane")
+            return
+        }
+        
+        if (trackable.trackingState != TrackingState.TRACKING) {
+            onError("Plane not tracking")
+            return
+        }
+
+        val translation = hitPose.translation
+        val zAxis = hitPose.zAxis
+        
+        // Validate array sizes
+        if (translation.size < 3 || zAxis.size < 3) {
+            onError("Invalid pose data")
+            return
+        }
+
+        val anchor = SurfaceAnchor(
+            messageText = messageText,
+            category = category,
+            latitude = location.latitude,
+            longitude = location.longitude,
+            geohash = com.phantomcrowd.utils.GeohashingUtility.encode(
+                location.latitude, location.longitude
+            ),
+            relativeOffsetX = translation[0],
+            relativeOffsetY = translation[1],
+            relativeOffsetZ = translation[2],
+            planeType = trackable.type.name,
+            surfaceNormalX = zAxis[0],
+            surfaceNormalY = zAxis[1],
+            surfaceNormalZ = zAxis[2],
+            timestamp = System.currentTimeMillis()
+        )
+        
+        Logger.i(Logger.Category.AR, "Anchor created at (${translation[0]}, ${translation[1]}, ${translation[2]})")
+        onSuccess(anchor)
+    } catch (e: Exception) {
+        Logger.e(Logger.Category.AR, "Placement error", e)
+        onError("Placement failed: ${e.message}")
+    }
+}
+
+/**
+ * Fallback placement using plane center pose (when hit test fails)
+ */
+private fun usePlaneCenterPlacement(
+    plane: Plane,
+    location: Location,
+    messageText: String,
+    category: String,
+    onSuccess: (SurfaceAnchor) -> Unit,
+    onError: (String) -> Unit
+) {
+    try {
+        // Verify plane is still tracking
+        if (plane.trackingState != TrackingState.TRACKING) {
+            onError("Plane lost tracking")
+            return
+        }
+
+        val centerPose = plane.centerPose
+        val translation = centerPose.translation
+        val zAxis = centerPose.zAxis
+        
+        val anchor = SurfaceAnchor(
+            messageText = messageText,
+            category = category,
+            latitude = location.latitude,
+            longitude = location.longitude,
+            geohash = com.phantomcrowd.utils.GeohashingUtility.encode(
+                location.latitude, location.longitude
+            ),
+            relativeOffsetX = translation[0],
+            relativeOffsetY = translation[1],
+            relativeOffsetZ = translation[2],
+            planeType = plane.type.name,
+            surfaceNormalX = zAxis[0],
+            surfaceNormalY = zAxis[1],
+            surfaceNormalZ = zAxis[2],
+            timestamp = System.currentTimeMillis()
+        )
+        
+        Logger.i(Logger.Category.AR, "Fallback anchor at plane center: (${translation[0]}, ${translation[1]}, ${translation[2]})")
+        onSuccess(anchor)
+    } catch (e: Exception) {
+        Logger.e(Logger.Category.AR, "Fallback placement error", e)
+        onError("Center placement failed: ${e.message}")
+    }
+}
+
+/**
+ * Get user-friendly tracking failure message
+ */
+private fun getTrackingFailureMessage(reason: TrackingFailureReason): String {
     return when (reason) {
-        TrackingFailureReason.NONE -> ""
-        TrackingFailureReason.BAD_STATE -> "⚠️ AR error - try restarting"
-        TrackingFailureReason.INSUFFICIENT_LIGHT -> "💡 Too dark - need more light"
-        TrackingFailureReason.EXCESSIVE_MOTION -> "📱 Moving too fast - hold steady"
-        TrackingFailureReason.INSUFFICIENT_FEATURES -> "🔍 Point at textured surface"
+        TrackingFailureReason.NONE -> "Tracking OK"
+        TrackingFailureReason.BAD_STATE -> "⏳ Waiting for AR to initialize..."
+        TrackingFailureReason.INSUFFICIENT_LIGHT -> "💡 Need more light"
+        TrackingFailureReason.EXCESSIVE_MOTION -> "📱 Move more slowly"
+        TrackingFailureReason.INSUFFICIENT_FEATURES -> "❌ Point at a textured surface"
         TrackingFailureReason.CAMERA_UNAVAILABLE -> "📷 Camera unavailable"
+        else -> "Tracking issue: $reason"
     }
 }
