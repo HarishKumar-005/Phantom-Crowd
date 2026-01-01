@@ -36,6 +36,7 @@
         <activity
             android:name=".ui.MainActivity"
             android:exported="true"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|smallestScreenSize|uiMode"
             android:theme="@style/Theme.PhantomCrowd">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

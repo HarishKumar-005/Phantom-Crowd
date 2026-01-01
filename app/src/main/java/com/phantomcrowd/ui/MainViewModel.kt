@@ -371,6 +371,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
+    
+    /**
+     * Get count of nearby issues for a specific use case.
+     * Used by PostCreationARScreen for the impact metric.
+     */
+    suspend fun getNearbyIssueCountForUseCase(
+        latitude: Double,
+        longitude: Double,
+        useCaseName: String
+    ): Int {
+        return try {
+            val allNearby = firebaseManager.getIssuesNearLocation(latitude, longitude, 1000.0) // 1km radius
+            val filtered = allNearby.filter { it.useCase == useCaseName }
+            Logger.d(Logger.Category.DATA, "Found ${filtered.size} nearby issues for use case $useCaseName")
+            filtered.size
+        } catch (e: Exception) {
+            Logger.e(Logger.Category.DATA, "Failed to get nearby issue count", e)
+            0
+        }
+    }
 
     /**
      * Upvote an issue in cloud storage.

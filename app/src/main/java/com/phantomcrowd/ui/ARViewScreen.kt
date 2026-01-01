@@ -138,6 +138,21 @@ fun ARViewScreen(
         onDispose {
             sensorManager.unregisterListener(sensorListener)
             cameraExecutor.shutdown()
+            // CRITICAL: Explicitly unbind CameraX to release camera for ARCore
+            try {
+                val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
+                cameraProviderFuture.addListener({
+                    try {
+                        val cameraProvider = cameraProviderFuture.get()
+                        cameraProvider.unbindAll()
+                        Logger.d(Logger.Category.AR, "CameraX fully unbound - camera released for ARCore")
+                    } catch (e: Exception) {
+                        Logger.e(Logger.Category.AR, "Failed to unbind CameraX", e)
+                    }
+                }, ContextCompat.getMainExecutor(context))
+            } catch (e: Exception) {
+                Logger.e(Logger.Category.AR, "Failed to get CameraProvider for cleanup", e)
+            }
             Logger.d(Logger.Category.AR, "ARViewScreen disposed - camera released")
         }
     }

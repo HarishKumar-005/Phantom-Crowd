@@ -27,5 +27,14 @@ data class AnchorData(
     val cloudAnchorId: String = "",  // For cloud AR anchor persistence
     val upvotes: Int = 0,  // Community validation count
     // Phase F: Wall Overlay Posting (simplified - no photo)
-    val wallAnchorId: String = ""  // Unique wall surface identifier
+    val wallAnchorId: String = "",  // Unique wall surface identifier
+    
+    // UI Redesign fields (Phase J) - All with defaults for backward compatibility
+    val useCase: String = "",           // UseCase enum name (e.g., "WOMENS_SAFETY")
+    val useCaseCategory: String = "",   // Category ID (e.g., "HARASSMENT")
+    val severity: String = "MEDIUM",    // Severity enum name (URGENT, HIGH, MEDIUM, LOW)
+    val locationName: String = "",      // Reverse geocoded or user entered location name
+    val nearbyIssueCount: Int = 0,      // Calculated: count of nearby issues
+    val status: String = ""             // Issue status (e.g., "PENDING", "RESOLVED", "IN_PROGRESS")
 )
+

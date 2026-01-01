@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Place
@@ -72,7 +73,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MainScreen(viewModel: MainViewModel) {
     var selectedTab by remember { mutableStateOf(0) }
-    val tabs = listOf("Nearby", "Post", "Map", "Navigate", "AR")
+    val tabs = listOf("Nearby", "Post", "Map", "Navigate", "AR", "Impact")
     
     val context = androidx.compose.ui.platform.LocalContext.current
     
@@ -146,6 +147,8 @@ fun MainScreen(viewModel: MainViewModel) {
                                     1 -> Icon(Icons.Filled.Add, contentDescription = null)
                                     2 -> Icon(Icons.Filled.Place, contentDescription = null)
                                     3 -> Icon(Icons.Filled.LocationOn, contentDescription = null)
+                                    4 -> Icon(Icons.Filled.Home, contentDescription = null)
+                                    5 -> Icon(Icons.Filled.Info, contentDescription = null) // Impact tab
                                     else -> Icon(Icons.Filled.Home, contentDescription = null)
                                 }
                             },
@@ -174,10 +177,31 @@ fun MainScreen(viewModel: MainViewModel) {
                     },
                     onCancel = { selectedTab = 0 }, // Go to Nearby tab
                     onOpenARPlacement = { messageText, category ->
-                        // Store message and category, then show AR screen
+                        // Store message and category
                         surfaceAnchorMessageText = messageText
                         surfaceAnchorCategory = category
-                        showSurfaceAnchorScreen = true
+                        
+                        // Release CameraX before opening ARCore-based SurfaceAnchorScreen
+                        scope.launch {
+                            try {
+                                val cameraProviderFuture = androidx.camera.lifecycle.ProcessCameraProvider.getInstance(context)
+                                val cameraProvider = cameraProviderFuture.get()
+                                cameraProvider.unbindAll()
+                                com.phantomcrowd.utils.Logger.d(
+                                    com.phantomcrowd.utils.Logger.Category.AR, 
+                                    "CameraX released before ARCore session"
+                                )
+                            } catch (e: Exception) {
+                                com.phantomcrowd.utils.Logger.e(
+                                    com.phantomcrowd.utils.Logger.Category.AR,
+                                    "Failed to release CameraX",
+                                    e
+                                )
+                            }
+                            // Small delay to ensure camera is fully released
+                            kotlinx.coroutines.delay(200)
+                            showSurfaceAnchorScreen = true
+                        }
                     }
                 )
                 2 -> {
@@ -264,7 +288,23 @@ fun MainScreen(viewModel: MainViewModel) {
                     startLocationLon = startLocationLon,
                     onOpenARNavigation = {
                         if (selectedAnchor != null) {
-                            showARNavigation = true
+                            // Release CameraX before opening CameraX-based ARNavigationScreen
+                            // This handles case where user is on AR tab (CameraX) and opens navigation
+                            scope.launch {
+                                try {
+                                    val cameraProviderFuture = androidx.camera.lifecycle.ProcessCameraProvider.getInstance(context)
+                                    val cameraProvider = cameraProviderFuture.get()
+                                    cameraProvider.unbindAll()
+                                    com.phantomcrowd.utils.Logger.d(
+                                        com.phantomcrowd.utils.Logger.Category.AR,
+                                        "CameraX released before ARNavigationScreen"
+                                    )
+                                } catch (e: Exception) {
+                                    // Ignore - camera may not be in use
+                                }
+                                kotlinx.coroutines.delay(100)
+                                showARNavigation = true
+                            }
                         }
                     }
                 )
@@ -285,6 +325,10 @@ fun MainScreen(viewModel: MainViewModel) {
                             )
                         }
                     }
+                }
+                5 -> {
+                    // Impact Dashboard - Community statistics
+                    ImpactDashboardScreen(viewModel)
                 }
             }
         }

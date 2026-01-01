@@ -145,6 +145,21 @@ fun ARNavigationScreen(
             sensorManager.unregisterListener(sensorListener)
             cameraExecutor.shutdown()
             voiceManager.shutdown()
+            // CRITICAL: Explicitly unbind CameraX to release camera for ARCore
+            try {
+                val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
+                cameraProviderFuture.addListener({
+                    try {
+                        val cameraProvider = cameraProviderFuture.get()
+                        cameraProvider.unbindAll()
+                        Logger.d(Logger.Category.AR, "ARNavigationScreen: CameraX unbound - camera released")
+                    } catch (e: Exception) {
+                        Logger.e(Logger.Category.AR, "Failed to unbind CameraX in ARNavigationScreen", e)
+                    }
+                }, ContextCompat.getMainExecutor(context))
+            } catch (e: Exception) {
+                Logger.e(Logger.Category.AR, "Failed to get CameraProvider for cleanup", e)
+            }
         }
     }
 

@@ -35,6 +35,8 @@ import io.github.sceneview.rememberView
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 
 /**
  * FIXED SurfaceAnchorScreen - AR placement with plane detection
@@ -100,6 +102,16 @@ fun SurfaceAnchorScreen(
     val collisionSystem = rememberCollisionSystem(view)
     val childNodes = rememberNodes()
 
+    // CRITICAL: Explicitly clean up ARCore session when composable leaves
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose {
+            Logger.d(Logger.Category.AR, "SurfaceAnchorScreen disposing - letting SceneView handle cleanup")
+            arSessionReady = false // Stop the frame loop
+            // NOTE: Do NOT call arCoreSession?.pause() here - SceneView manages the session lifecycle
+            // and calling pause() on an already-paused session causes FatalException
+        }
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         
         // AR Scene
@@ -143,130 +155,133 @@ fun SurfaceAnchorScreen(
         )
 
         // Manual frame update loop (KEY FIX for SceneView 2.0.3)
-        LaunchedEffect(arSessionReady) {
+        val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+        LaunchedEffect(arSessionReady, lifecycleOwner) {
             if (arSessionReady && arCoreSession != null) {
-                while (arSessionReady) {
-                    try {
-                        val session = arCoreSession ?: break
-                        
-                        // Get current frame from ARCore session
-                        val frame = try {
-                            session.update()
-                        } catch (e: Exception) {
-                            Logger.w(Logger.Category.AR, "Frame update failed: ${e.message}")
-                            delay(100)
-                            continue
-                        }
-                        
-                        lastFrameTime = System.currentTimeMillis()
-                        
-                        // Update tracking state
-                        val camera = frame.camera
-                        trackingState = camera.trackingState
-                        
-                        // Find detected planes (filter small planes)
-                        val planes = session.getAllTrackables(Plane::class.java)
-                            .filter { it.trackingState == TrackingState.TRACKING }
-                            .filter { it.extentX > 0.1f && it.extentZ > 0.1f }
-                        
-                        planesDetected = planes.size
-                        
-                        // Track best plane (largest, most stable)
-                        if (planes.isNotEmpty()) {
-                            bestPlane = planes.maxByOrNull { it.extentX * it.extentZ }
-                            if (planeStableTime == 0L) {
-                                planeStableTime = System.currentTimeMillis()
+                lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                    while (arSessionReady) {
+                        try {
+                            val session = arCoreSession ?: break
+                            
+                            // Get current frame from ARCore session
+                            val frame = try {
+                                session.update()
+                            } catch (e: Exception) {
+                                Logger.w(Logger.Category.AR, "Frame update failed: ${e.message}")
+                                delay(100)
+                                continue
                             }
-                        } else {
-                            bestPlane = null
-                            planeStableTime = 0L
-                        }
-                        
-                        // Handle placement request (thread-safe with Mutex)
-                        if (shouldPlaceAnchor && !isPlacing) {
-                            isPlacing = true
-                            placementMutex.lock()
-                            try {
-                                val planeToUse = bestPlane
-                                val location = userLocation
-                                
-                                if (planeToUse != null && location != null) {
-                                    // Get screen center using DisplayMetrics (CORRECT approach)
-                                    val displayMetrics = context.resources.displayMetrics
-                                    val screenCenterX = displayMetrics.widthPixels / 2f
-                                    val screenCenterY = displayMetrics.heightPixels / 2f
+                            
+                            lastFrameTime = System.currentTimeMillis()
+                            
+                            // Update tracking state
+                            val camera = frame.camera
+                            trackingState = camera.trackingState
+                            
+                            // Find detected planes (filter small planes)
+                            val planes = session.getAllTrackables(Plane::class.java)
+                                .filter { it.trackingState == TrackingState.TRACKING }
+                                .filter { it.extentX > 0.1f && it.extentZ > 0.1f }
+                            
+                            planesDetected = planes.size
+                            
+                            // Track best plane (largest, most stable)
+                            if (planes.isNotEmpty()) {
+                                bestPlane = planes.maxByOrNull { it.extentX * it.extentZ }
+                                if (planeStableTime == 0L) {
+                                    planeStableTime = System.currentTimeMillis()
+                                }
+                            } else {
+                                bestPlane = null
+                                planeStableTime = 0L
+                            }
+                            
+                            // Handle placement request (thread-safe with Mutex)
+                            if (shouldPlaceAnchor && !isPlacing) {
+                                isPlacing = true
+                                placementMutex.lock()
+                                try {
+                                    val planeToUse = bestPlane
+                                    val location = userLocation
                                     
-                                    // Perform hit test at screen center
-                                    val hitResults = frame.hitTest(screenCenterX, screenCenterY)
-                                    val hit = hitResults.firstOrNull { result ->
-                                        val trackable = result.trackable
-                                        // Type-safe check (no unsafe cast)
-                                        if (trackable is Plane) {
-                                            trackable.trackingState == TrackingState.TRACKING &&
-                                            trackable.isPoseInPolygon(result.hitPose)
+                                    if (planeToUse != null && location != null) {
+                                        // Get screen center using DisplayMetrics (CORRECT approach)
+                                        val displayMetrics = context.resources.displayMetrics
+                                        val screenCenterX = displayMetrics.widthPixels / 2f
+                                        val screenCenterY = displayMetrics.heightPixels / 2f
+                                        
+                                        // Perform hit test at screen center
+                                        val hitResults = frame.hitTest(screenCenterX, screenCenterY)
+                                        val hit = hitResults.firstOrNull { result ->
+                                            val trackable = result.trackable
+                                            // Type-safe check (no unsafe cast)
+                                            if (trackable is Plane) {
+                                                trackable.trackingState == TrackingState.TRACKING &&
+                                                trackable.isPoseInPolygon(result.hitPose)
+                                            } else {
+                                                false
+                                            }
+                                        }
+                                        
+                                        if (hit != null) {
+                                            // Successful hit test - use hit pose
+                                            performPlacement(
+                                                hit = hit,
+                                                location = location,
+                                                messageText = messageText,
+                                                category = category,
+                                                onSuccess = { anchor ->
+                                                    placementSuccess = true
+                                                    scope.launch {
+                                                        delay(800)
+                                                        onAnchorPlaced(anchor)
+                                                    }
+                                                },
+                                                onError = { error ->
+                                                    errorMessage = error
+                                                    Logger.e(Logger.Category.AR, "Placement failed: $error")
+                                                }
+                                            )
                                         } else {
-                                            false
+                                            // Fallback to plane center if hit test fails
+                                            usePlaneCenterPlacement(
+                                                plane = planeToUse,
+                                                location = location,
+                                                messageText = messageText,
+                                                category = category,
+                                                onSuccess = { anchor ->
+                                                    placementSuccess = true
+                                                    scope.launch {
+                                                        delay(800)
+                                                        onAnchorPlaced(anchor)
+                                                    }
+                                                },
+                                                onError = { error ->
+                                                    errorMessage = error
+                                                }
+                                            )
+                                        }
+                                    } else {
+                                        // Clear error messages for each case
+                                        errorMessage = when {
+                                            location == null -> "📍 Location not available - please enable GPS"
+                                            planeToUse == null -> "👀 No surface detected - point camera at a flat surface"
+                                            else -> "Unknown error - please try again"
                                         }
                                     }
-                                    
-                                    if (hit != null) {
-                                        // Successful hit test - use hit pose
-                                        performPlacement(
-                                            hit = hit,
-                                            location = location,
-                                            messageText = messageText,
-                                            category = category,
-                                            onSuccess = { anchor ->
-                                                placementSuccess = true
-                                                scope.launch {
-                                                    delay(800)
-                                                    onAnchorPlaced(anchor)
-                                                }
-                                            },
-                                            onError = { error ->
-                                                errorMessage = error
-                                                Logger.e(Logger.Category.AR, "Placement failed: $error")
-                                            }
-                                        )
-                                    } else {
-                                        // Fallback to plane center if hit test fails
-                                        usePlaneCenterPlacement(
-                                            plane = planeToUse,
-                                            location = location,
-                                            messageText = messageText,
-                                            category = category,
-                                            onSuccess = { anchor ->
-                                                placementSuccess = true
-                                                scope.launch {
-                                                    delay(800)
-                                                    onAnchorPlaced(anchor)
-                                                }
-                                            },
-                                            onError = { error ->
-                                                errorMessage = error
-                                            }
-                                        )
-                                    }
-                                } else {
-                                    // Clear error messages for each case
-                                    errorMessage = when {
-                                        location == null -> "📍 Location not available - please enable GPS"
-                                        planeToUse == null -> "👀 No surface detected - point camera at a flat surface"
-                                        else -> "Unknown error - please try again"
-                                    }
+                                } finally {
+                                    shouldPlaceAnchor = false
+                                    isPlacing = false
+                                    placementMutex.unlock()
                                 }
-                            } finally {
-                                shouldPlaceAnchor = false
-                                isPlacing = false
-                                placementMutex.unlock()
                             }
+                            
+                            // Frame rate limiter (~60fps)
+                            delay(16)
+                        } catch (e: Exception) {
+                            Logger.e(Logger.Category.AR, "Frame update error", e)
+                            delay(100) // Wait before retrying
                         }
-                        
-                        // Frame rate limiter (~60fps)
-                        delay(16)
-                    } catch (e: Exception) {
-                        Logger.e(Logger.Category.AR, "Frame update error", e)
-                        delay(100) // Wait before retrying
                     }
                 }
             }

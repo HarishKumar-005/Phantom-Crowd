@@ -163,6 +163,7 @@ class FirebaseAnchorManager(private val firestore: FirebaseFirestore) {
     
     /**
      * One-shot fetch of nearby issues (suspend, not Flow)
+     * Fetches from BOTH issues and surface_anchors collections and merges results
      */
     suspend fun getIssuesNearLocation(
         latitude: Double,
@@ -179,22 +180,86 @@ class FirebaseAnchorManager(private val firestore: FirebaseFirestore) {
             return@suspendCancellableCoroutine
         }
         
+        // Track completion of both queries
+        var issuesResult: List<AnchorData>? = null
+        var surfaceAnchorsResult: List<AnchorData>? = null
+        
+        fun tryComplete() {
+            val issues = issuesResult
+            val surfaces = surfaceAnchorsResult
+            if (issues != null && surfaces != null) {
+                val merged = issues + surfaces
+                Log.d(TAG, "One-shot: Merged ${issues.size} issues + ${surfaces.size} surface anchors = ${merged.size} total")
+                continuation.resume(merged)
+            }
+        }
+        
+        // Query issues collection
         firestore.collection(ISSUES_COLLECTION)
             .whereIn("geohash", nearbyGeohashes)
             .get()
             .addOnSuccessListener { snapshot ->
                 try {
-                    val issues = snapshot.toObjects(AnchorData::class.java)
-                    Log.d(TAG, "One-shot: Found ${issues.size} nearby issues")
-                    continuation.resume(issues)
+                    issuesResult = snapshot.toObjects(AnchorData::class.java)
+                    Log.d(TAG, "One-shot: Found ${issuesResult?.size ?: 0} issues")
+                    tryComplete()
                 } catch (e: Exception) {
-                    Log.e(TAG, "Parse error: ${e.message}")
-                    continuation.resume(emptyList())
+                    Log.e(TAG, "Parse error (issues): ${e.message}")
+                    issuesResult = emptyList()
+                    tryComplete()
                 }
             }
             .addOnFailureListener { e ->
-                Log.e(TAG, "Query failed: ${e.message}")
-                continuation.resume(emptyList())
+                Log.e(TAG, "Query failed (issues): ${e.message}")
+                issuesResult = emptyList()
+                tryComplete()
+            }
+        
+        // Query surface_anchors collection and convert to AnchorData
+        firestore.collection(SurfaceAnchor.COLLECTION_NAME)
+            .whereIn("geohash", nearbyGeohashes)
+            .get()
+            .addOnSuccessListener { snapshot ->
+                try {
+                    val surfaceAnchors = snapshot.documents.mapNotNull { doc ->
+                        try {
+                            val data = doc.data ?: return@mapNotNull null
+                            val surfaceAnchor = SurfaceAnchor.fromFirestore(doc.id, data)
+                            // Convert SurfaceAnchor to AnchorData for unified display
+                            AnchorData(
+                                id = "surface_${surfaceAnchor.id}",
+                                messageText = surfaceAnchor.messageText,
+                                category = surfaceAnchor.category,
+                                latitude = surfaceAnchor.latitude,
+                                longitude = surfaceAnchor.longitude,
+                                altitude = 0.0,
+                                geohash = surfaceAnchor.geohash,
+                                timestamp = surfaceAnchor.timestamp,
+                                cloudAnchorId = "",
+                                wallAnchorId = "surface_${surfaceAnchor.id}",
+                                upvotes = 0,
+                                rotationX = 0f,
+                                rotationY = 0f,
+                                rotationZ = 0f
+                            )
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error converting surface anchor: ${e.message}")
+                            null
+                        }
+                    }
+                    surfaceAnchorsResult = surfaceAnchors
+                    Log.d(TAG, "One-shot: Found ${surfaceAnchors.size} surface anchors")
+                    tryComplete()
+                } catch (e: Exception) {
+                    Log.e(TAG, "Parse error (surface anchors): ${e.message}")
+                    surfaceAnchorsResult = emptyList()
+                    tryComplete()
+                }
+            }
+            .addOnFailureListener { e ->
+                Log.e(TAG, "Query failed (surface anchors): ${e.message}")
+                surfaceAnchorsResult = emptyList()
+                tryComplete()
             }
     }
     
