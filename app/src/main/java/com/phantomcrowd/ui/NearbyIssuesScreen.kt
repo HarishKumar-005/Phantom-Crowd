@@ -162,6 +162,60 @@ fun NearbyIssuesScreen(
                 }
             )
             
+            // Location Enable Banner - show when GPS is off
+            if (currentLocation == null && !isLoading) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = Color(0xFFFFE0B2) // Warm orange background
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Icon(
+                            Icons.Filled.LocationOn,
+                            contentDescription = null,
+                            tint = Color(0xFFE65100),
+                            modifier = Modifier.size(32.dp)
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "📍 Enable Location",
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFFE65100),
+                                fontSize = 15.sp
+                            )
+                            Text(
+                                text = "Turn on GPS to discover nearby issues and reports in your area",
+                                color = Color(0xFF5D4037),
+                                fontSize = 12.sp
+                            )
+                        }
+                        Button(
+                            onClick = {
+                                // Open location settings
+                                val intent = android.content.Intent(android.provider.Settings.ACTION_LOCATION_SOURCE_SETTINGS)
+                                context.startActivity(intent)
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFFE65100)
+                            ),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("Enable", color = Color.White, fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+            
             if (isLoading) {
                 // Loading skeleton
                 LazyColumn(
