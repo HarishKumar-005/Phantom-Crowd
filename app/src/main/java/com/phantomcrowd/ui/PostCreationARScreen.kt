@@ -236,18 +236,13 @@ fun PostCreationARScreen(
                     4 -> Step4ARPlacement(
                         formState = formState,
                         onPlaceOnSurface = {
-                            // Save the issue first, then open AR
-                            scope.launch {
-                                saveIssue(viewModel, formState, context) { success ->
-                                    if (success) {
-                                        onOpenARPlacement?.invoke(
-                                            formState.description,
-                                            formState.selectedCategory?.id ?: "general"
-                                        )
-                                        formState = formState.copy(currentStep = 5, saveSuccess = true)
-                                    }
-                                }
-                            }
+                            // Don't save here - SurfaceAnchorScreen will save to surface_anchors collection
+                            // This prevents duplicate entries (one in issues, one in surface_anchors)
+                            onOpenARPlacement?.invoke(
+                                formState.description,
+                                formState.selectedCategory?.id ?: "general"
+                            )
+                            formState = formState.copy(currentStep = 5, saveSuccess = true)
                         },
                         onSkipAR = {
                             // Save without AR

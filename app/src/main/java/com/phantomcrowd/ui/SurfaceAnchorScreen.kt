@@ -321,7 +321,7 @@ fun SurfaceAnchorScreen(
                         text = when {
                             placementSuccess -> "✅ Placed!"
                             planesDetected > 0 -> "🟡 ${planesDetected} surface(s)"
-                            arSessionReady -> "👀 Looking..."
+                            arSessionReady -> "🔍 Searching..."
                             else -> "⏳ Starting AR"
                         },
                         color = Color.White,

@@ -25,6 +25,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -73,7 +74,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MainScreen(viewModel: MainViewModel) {
     var selectedTab by remember { mutableStateOf(0) }
-    val tabs = listOf("Nearby", "Post", "Map", "Navigate", "AR", "Impact")
+    val tabs = listOf("Nearby", "Post", "Map", "Nav", "AR", "Impact")
     
     val context = androidx.compose.ui.platform.LocalContext.current
     
@@ -205,77 +206,73 @@ fun MainScreen(viewModel: MainViewModel) {
                     }
                 )
                 2 -> {
-                    // Map Tab with Heatmap controls
-                    Column(modifier = Modifier.fillMaxSize()) {
-                        // Top of Map tab area - add button row
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(8.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Button(
-                                onClick = { viewModel.toggleHeatmap() },
-                                modifier = Modifier.weight(1f),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (viewModel.showHeatmap.collectAsState().value) 
-                                        Color.Red else Color.Gray
-                                )
-                            ) {
-                                Text(
-                                    if (viewModel.showHeatmap.collectAsState().value) "🔥 Heatmap ON" 
-                                    else "❄️ Heatmap OFF"
-                                )
+                    // Map Tab with Heatmap controls - using Box for proper z-ordering
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        // Map layer (bottom)
+                        MapDiscoveryTab(
+                            userLocation = currentLocation,
+                            nearbyAnchors = nearbyAnchors,
+                            showHeatmap = viewModel.showHeatmap.collectAsState().value,
+                            onNavigateTo = { anchor ->
+                                android.util.Log.d("MapDiscoveryTab", "Navigate to: ${anchor.messageText}")
+                                viewModel.setSelectedAnchor(anchor)
+                                // Switch to Navigation tab
+                                selectedTab = 3
                             }
-                        }
-
-                        Box(modifier = Modifier.weight(1f)) {
-                            MapDiscoveryTab(
-                                userLocation = currentLocation,
-                                nearbyAnchors = nearbyAnchors,
-                                showHeatmap = viewModel.showHeatmap.collectAsState().value,
-                                onNavigateTo = { anchor ->
-                                    android.util.Log.d("MapDiscoveryTab", "Navigate to: ${anchor.messageText}")
-                                    viewModel.setSelectedAnchor(anchor)
-                                    // Switch to Navigation tab
-                                    selectedTab = 3
-                                }
+                        )
+                        
+                        // Heatmap toggle button (top layer with zIndex)
+                        Button(
+                            onClick = { viewModel.toggleHeatmap() },
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .padding(top = 8.dp)
+                                .zIndex(10f), // Ensure button stays above map
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (viewModel.showHeatmap.collectAsState().value) 
+                                    Color.Red else Color.Gray
                             )
+                        ) {
+                            Text(
+                                if (viewModel.showHeatmap.collectAsState().value) "🔥 Heatmap ON" 
+                                else "❄️ Heatmap OFF"
+                            )
+                        }
+                        
+                        // Legend overlay (top-right corner)
+                        Column(
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(top = 56.dp, end = 16.dp)
+                                .zIndex(10f) // Ensure legend stays above map
+                                .background(Color.White.copy(alpha = 0.9f), RoundedCornerShape(8.dp))
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text("Heatmap Legend", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color.Black)
                             
-                            // Legend overlay (top-right corner)
-                            Column(
-                                modifier = Modifier
-                                    .align(Alignment.TopEnd)
-                                    .padding(16.dp)
-                                    .background(Color.White.copy(alpha = 0.9f), RoundedCornerShape(8.dp))
-                                    .padding(12.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Text("Heatmap Legend", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color.Black)
-                                
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Box(modifier = Modifier
-                                        .size(20.dp)
-                                        .background(Color.Red)
-                                    )
-                                    Text("5+ issues", fontSize = 10.sp, modifier = Modifier.padding(start = 8.dp), color = Color.Black)
-                                }
-                                
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Box(modifier = Modifier
-                                        .size(20.dp)
-                                        .background(Color.Yellow)
-                                    )
-                                    Text("2-4 issues", fontSize = 10.sp, modifier = Modifier.padding(start = 8.dp), color = Color.Black)
-                                }
-                                
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Box(modifier = Modifier
-                                        .size(20.dp)
-                                        .background(Color.Green)
-                                    )
-                                    Text("1 issue", fontSize = 10.sp, modifier = Modifier.padding(start = 8.dp), color = Color.Black)
-                                }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(modifier = Modifier
+                                    .size(20.dp)
+                                    .background(Color.Red)
+                                )
+                                Text("5+ issues", fontSize = 10.sp, modifier = Modifier.padding(start = 8.dp), color = Color.Black)
+                            }
+                            
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(modifier = Modifier
+                                    .size(20.dp)
+                                    .background(Color.Yellow)
+                                )
+                                Text("2-4 issues", fontSize = 10.sp, modifier = Modifier.padding(start = 8.dp), color = Color.Black)
+                            }
+                            
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(modifier = Modifier
+                                    .size(20.dp)
+                                    .background(Color.Green)
+                                )
+                                Text("1 issue", fontSize = 10.sp, modifier = Modifier.padding(start = 8.dp), color = Color.Black)
                             }
                         }
                     }
