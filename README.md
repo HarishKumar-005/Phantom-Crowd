@@ -270,53 +270,26 @@ phantom-crowd/
 
 ---
 
-## 🤝 Contributing
-
-This is a hackathon project submission. While it's not currently accepting contributions, feel free to fork it for your own projects!
-
----
-
-## 📜 License
-
-This project is licensed under the **MIT License** - see [LICENSE](LICENSE) file for details.
-
-```
-MIT License
-
-Copyright (c) 2026 Phantom Crowd Contributors
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software...
-```
-
----
-
-## 👨‍💻 Author
-
-**Your Name**
-- 📧 Email: your.email@example.com
-- 🔗 GitHub: [@your-username](https://github.com/your-username)
-- 💼 LinkedIn: [Your Profile](https://linkedin.com/in/your-profile)
-
----
-
 ## 🏆 Hackathon Details
 
-- **Hackathon Name:** GDG Campus Tech Sprint 2026
-- **Submission Date:** January 3, 2026
-- **Category:** Android / AR / Location-Based Services
-- **Theme:** Social Justice / Community Impact / Innovation
+**Team name:** Tech Pros
+**Team leader name:** Akshaya S
+
+**Team Members :**
+1. Harish Kumar S P
+2. Kaviya K
+3. Layasree S
+
+**Hackathon Name :** Tech4Impact
+**Problem Statement:** Open Innovation
 
 ---
 
 ## Quick Links
 
-- 🔗 [GitHub Repository](https://github.com/your-username/phantom-crowd)
-- 📱 [Download APK](#) (if available)
-- 🎥 [Demo Video](#) (if available)
+- 🔗 [GitHub Repository](https://github.com/HarishKumar-005/Phantom-Crowd)
+- 📱 [Download APK](https://github.com/HarishKumar-005/Phantom-Crowd/releases/download/v1.0/Phantom-Crowd.apk)
+- 🎥 [Demo Video](INSERT_DRIVE_LINK_HERE)
 
 ---
 
