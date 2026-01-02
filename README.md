@@ -1,6 +1,6 @@
 # 👻 Phantom Crowd - AR Ghost Protest Network
 
-> **Anonymous Location-Based AR Messaging Platform for Collective Voice & Social Justice**
+> **Phantom Crowd is an anonymous, location-anchored reporting platform that uses AR to make hidden community problems visible.**
 
 [![GitHub](https://img.shields.io/badge/GitHub-PhantomCrowd-blue?style=flat-square&logo=github)](https://github.com/your-username/phantom-crowd)
 [![Android](https://img.shields.io/badge/Android-Kotlin-green?style=flat-square&logo=android)](https://developer.android.com/kotlin)
