@@ -13,6 +13,7 @@ Create a new branch for your feature or bug fix:
 git checkout -b feature/amazing-feature
 ```
 
+
 ### 3. Make Changes
 - Write clean, maintainable code.
 - Follow the existing code style.
