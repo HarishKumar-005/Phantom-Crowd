@@ -31,6 +31,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.phantomcrowd.data.*
 import com.phantomcrowd.utils.Logger
+import com.phantomcrowd.ai.ContentModerationHelper
+import com.phantomcrowd.ai.ModerationResult
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -123,6 +125,31 @@ fun PostCreationARScreen(
         }
     }
     
+    // AI Content Moderation
+    val moderationHelper = remember { ContentModerationHelper(context) }
+    var moderationResult by remember { mutableStateOf<ModerationResult>(ModerationResult.Empty) }
+    var isAnalyzing by remember { mutableStateOf(false) }
+    
+    // Debounced AI analysis - triggers 500ms after user stops typing
+    LaunchedEffect(formState.description) {
+        if (formState.description.length >= 10) {
+            isAnalyzing = true
+            delay(500) // Debounce - wait for user to stop typing
+            moderationResult = moderationHelper.moderateContent(formState.description)
+            isAnalyzing = false
+        } else {
+            moderationResult = ModerationResult.Empty
+            isAnalyzing = false
+        }
+    }
+    
+    // Cleanup AI resources when leaving screen
+    DisposableEffect(Unit) {
+        onDispose {
+            moderationHelper.close()
+        }
+    }
+    
     Scaffold(
         topBar = {
             TopAppBar(
@@ -205,6 +232,8 @@ fun PostCreationARScreen(
                         formState = formState,
                         nearbyCount = nearbyCount,
                         isLoadingNearbyCount = isLoadingNearbyCount,
+                        moderationResult = moderationResult,
+                        isAnalyzing = isAnalyzing,
                         onDescriptionChange = { desc ->
                             formState = formState.copy(description = desc)
                         },
@@ -216,6 +245,9 @@ fun PostCreationARScreen(
                         },
                         onNext = {
                             when {
+                                moderationResult is ModerationResult.Blocked -> {
+                                    Toast.makeText(context, "Please revise your content before posting", Toast.LENGTH_LONG).show()
+                                }
                                 formState.description.isBlank() -> {
                                     Toast.makeText(context, "Please describe what happened", Toast.LENGTH_SHORT).show()
                                 }
@@ -600,13 +632,15 @@ private fun CategoryButton(
 }
 
 /**
- * Step 3: Details and Privacy
+ * Step 3: Details and Privacy with AI Content Moderation
  */
 @Composable
 private fun Step3DetailsAndPrivacy(
     formState: PostFormState,
     nearbyCount: Int,
     isLoadingNearbyCount: Boolean,
+    moderationResult: ModerationResult,
+    isAnalyzing: Boolean,
     onDescriptionChange: (String) -> Unit,
     onConfirmAccurateChange: (Boolean) -> Unit,
     onConfirmAnonymousChange: (Boolean) -> Unit,
@@ -705,6 +739,72 @@ private fun Step3DetailsAndPrivacy(
                 },
                 isError = formState.description.isEmpty()
             )
+        }
+        
+        // AI Content Moderation Feedback
+        item {
+            AnimatedVisibility(
+                visible = formState.description.length >= 10 || isAnalyzing,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                val (backgroundColor, icon, message, textColor) = when {
+                    isAnalyzing -> listOf(
+                        Color(0xFFE3F2FD), "🔍", "Analyzing content...", Color(0xFF1565C0)
+                    )
+                    moderationResult is ModerationResult.Safe -> listOf(
+                        Color(0xFFE8F5E9), "✅", "Your report looks appropriate", Color(0xFF2E7D32)
+                    )
+                    moderationResult is ModerationResult.Warning -> listOf(
+                        Color(0xFFFFF8E1), "⚠️", "Please ensure your report is factual and respectful", Color(0xFFF57C00)
+                    )
+                    moderationResult is ModerationResult.Blocked -> listOf(
+                        Color(0xFFFFEBEE), "🚫", "This content may violate community guidelines. Please revise.", Color(0xFFC62828)
+                    )
+                    moderationResult is ModerationResult.Error -> listOf(
+                        Color(0xFFECEFF1), "❓", "Could not analyze content", Color(0xFF546E7A)
+                    )
+                    else -> listOf(Color.Transparent, "", "", Color.Transparent)
+                }
+                
+                if (backgroundColor != Color.Transparent) {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = backgroundColor as Color),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (isAnalyzing) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    strokeWidth = 2.dp,
+                                    color = textColor as Color
+                                )
+                            } else {
+                                Text(icon as String, fontSize = 20.sp)
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    message as String,
+                                    color = textColor as Color,
+                                    fontWeight = FontWeight.Medium,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                if (moderationResult is ModerationResult.Blocked) {
+                                    Text(
+                                        "Modify your text to continue",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = (textColor as Color).copy(alpha = 0.7f)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
         
         // Why This Matters
