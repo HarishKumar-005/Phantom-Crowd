@@ -6,7 +6,6 @@
 [![Android](https://img.shields.io/badge/Android-Kotlin-green?style=flat-square&logo=android)](https://developer.android.com/kotlin)
 [![ARCore](https://img.shields.io/badge/ARCore-1.41.0-red?style=flat-square&logo=google)](https://developers.google.com/ar)
 [![Hackathon](https://img.shields.io/badge/Hackathon-2026-yellow?style=flat-square)](#)
-[![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 
 ---
 
