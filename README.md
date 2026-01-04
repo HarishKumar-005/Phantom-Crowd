@@ -1,4 +1,4 @@
-# 👻 Phantom Crowd - AR Ghost Protest Network
+# 👻 Phantom Crowd — Anonymous AR-Based Community Issue Reporting
 
 > **Phantom Crowd is an anonymous, location-anchored reporting platform that uses AR to make hidden community problems visible.**
 
