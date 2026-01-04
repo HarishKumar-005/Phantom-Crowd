@@ -34,7 +34,7 @@ In an era of increasing surveillance and shrinking civic space, individuals ofte
 ### Clone & Build
 ```bash
 # Clone the repository
-git clone [https://github.com/your-username/phantom-crowd.git](https://github.com/HarishKumar-005/Phantom-Crowd.git)
+git clone https://github.com/HarishKumar-005/Phantom-Crowd.git
 cd phantom-crowd
 
 # Build and run
