@@ -271,8 +271,6 @@ phantom-crowd/
 
 ## 🏆 Hackathon Details
 
-**Hackathon Name :** Tech4Impact
-
 **Team name:** Tech Pros
 
 **Team leader name:** Akshaya S
@@ -280,7 +278,6 @@ phantom-crowd/
 **Team Members :**
 1. Harish Kumar S P
 2. Kaviya K
-
 
 ---
 
