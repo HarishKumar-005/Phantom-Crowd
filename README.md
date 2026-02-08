@@ -1,4 +1,4 @@
-# 👻 Phantom Crowd - AR Ghost Protest Network
+# 👻 Phantom Crowd — Anonymous AR-Based Community Issue Reporting
 
 > **Phantom Crowd is an anonymous, location-anchored reporting platform that uses AR to make hidden community problems visible.**
 
@@ -34,7 +34,7 @@ In an era of increasing surveillance and shrinking civic space, individuals ofte
 ### Clone & Build
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/phantom-crowd.git
+git clone https://github.com/HarishKumar-005/Phantom-Crowd.git
 cd phantom-crowd
 
 # Build and run
@@ -271,12 +271,19 @@ phantom-crowd/
 
 ## 🏆 Hackathon Details
 
+**Hackathon Name :** Tech4Impact
+
 **Team name:** Tech Pros
+
 **Team leader name:** Akshaya S
 
 **Team Members :**
 1. Harish Kumar S P
 2. Kaviya K
+3. Layasree S
+
+**Hackathon Name :** Tech4Impact
+**Problem Statement:** Open Innovation
 
 ---
 
@@ -284,7 +291,7 @@ phantom-crowd/
 
 - 🔗 [GitHub Repository](https://github.com/HarishKumar-005/Phantom-Crowd)
 - 📱 [Download APK](https://github.com/HarishKumar-005/Phantom-Crowd/releases/download/v1.0/Phantom-Crowd.apk)
-- 🎥 [Demo Video](INSERT_DRIVE_LINK_HERE)
+- 🎥 [Demo Video](https://drive.google.com/file/d/12xKXQiIaCgmRVPmgjaMb8uyvOgjxfudr/view?usp=sharing)
 
 ---
 
