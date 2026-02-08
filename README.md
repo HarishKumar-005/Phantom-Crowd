@@ -277,10 +277,6 @@ phantom-crowd/
 **Team Members :**
 1. Harish Kumar S P
 2. Kaviya K
-3. Layasree S
-
-**Hackathon Name :** Tech4Impact
-**Problem Statement:** Open Innovation
 
 ---
 

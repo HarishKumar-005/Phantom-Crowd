@@ -14,8 +14,11 @@ import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
+import com.google.android.gms.tasks.CancellationTokenSource
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
 
 /**
  * Utility class for GPS location updates.
@@ -169,5 +172,82 @@ class GPSUtils(private val context: Context) {
     fun getDistanceFromCurrent(lat: Double, lon: Double): Float? {
         val current = _locationFlow.value ?: return null
         return getDistanceBetween(current.latitude, current.longitude, lat, lon)
+    }
+
+    /**
+     * Get location quickly using getCurrentLocation() API.
+     * Much faster than requestLocationUpdates() - typically 300-1000ms.
+     * 
+     * Strategy:
+     * 1. Try lastLocation first (instant if available and fresh)
+     * 2. Fall back to getCurrentLocation() (single fresh fix)
+     */
+    @SuppressLint("MissingPermission")
+    suspend fun getCurrentLocationFast(): Location? {
+        if (!hasLocationPermission()) {
+            Logger.w(Logger.Category.GPS, "No location permission for fast location")
+            return null
+        }
+
+        return suspendCancellableCoroutine { continuation ->
+            val startTime = System.currentTimeMillis()
+            
+            // First try last location (instant if available)
+            fusedLocationClient.lastLocation
+                .addOnSuccessListener { lastLoc ->
+                    if (lastLoc != null && isLocationFresh(lastLoc)) {
+                        val elapsed = System.currentTimeMillis() - startTime
+                        Logger.i(Logger.Category.GPS, 
+                            "Fast location from cache in ${elapsed}ms: ${lastLoc.latitude}, ${lastLoc.longitude}")
+                        _locationFlow.value = lastLoc
+                        continuation.resume(lastLoc)
+                    } else {
+                        // Fall back to getCurrentLocation (faster than requestLocationUpdates)
+                        Logger.d(Logger.Category.GPS, "No fresh cache, using getCurrentLocation...")
+                        val cancellationTokenSource = CancellationTokenSource()
+                        
+                        fusedLocationClient.getCurrentLocation(
+                            Priority.PRIORITY_HIGH_ACCURACY,
+                            cancellationTokenSource.token
+                        ).addOnSuccessListener { freshLoc ->
+                            val elapsed = System.currentTimeMillis() - startTime
+                            if (freshLoc != null) {
+                                Logger.i(Logger.Category.GPS,
+                                    "Fresh location in ${elapsed}ms: ${freshLoc.latitude}, ${freshLoc.longitude}")
+                                _locationFlow.value = freshLoc
+                                continuation.resume(freshLoc)
+                            } else {
+                                Logger.w(Logger.Category.GPS, "getCurrentLocation returned null after ${elapsed}ms")
+                                continuation.resume(null)
+                            }
+                        }.addOnFailureListener { e ->
+                            val elapsed = System.currentTimeMillis() - startTime
+                            Logger.e(Logger.Category.GPS, "getCurrentLocation failed after ${elapsed}ms", e)
+                            continuation.resume(null)
+                        }
+                        
+                        // Cancel if coroutine is cancelled
+                        continuation.invokeOnCancellation {
+                            cancellationTokenSource.cancel()
+                        }
+                    }
+                }
+                .addOnFailureListener { e ->
+                    Logger.e(Logger.Category.GPS, "lastLocation check failed", e)
+                    continuation.resume(null)
+                }
+        }
+    }
+
+    /**
+     * Check if a location is fresh enough to use (less than 60 seconds old).
+     */
+    private fun isLocationFresh(location: Location): Boolean {
+        val ageMs = System.currentTimeMillis() - location.time
+        val isFresh = ageMs < 60_000 // 1 minute threshold
+        if (DebugConfig.LOG_LOCATION_UPDATES) {
+            Logger.d(Logger.Category.GPS, "Location age: ${ageMs/1000}s, fresh: $isFresh")
+        }
+        return isFresh
     }
 }

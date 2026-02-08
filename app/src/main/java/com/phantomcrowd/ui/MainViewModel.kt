@@ -168,17 +168,41 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     /**
      * Start or refresh location updates and nearby anchors.
+     * Uses fast location first (instant), then starts continuous updates.
      */
     fun updateLocation() {
         Logger.d(Logger.Category.GPS, "updateLocation() called")
-        gpsUtils.startLocationUpdates()
-
+        
         viewModelScope.launch(exceptionHandler) {
-            gpsUtils.locationFlow.collect { location ->
-                Logger.d(Logger.Category.GPS, "ViewModel received location: $location")
-                _currentLocation.value = location
+            _isLoading.value = true
+            
+            // FAST: Get location immediately using getCurrentLocation API (~500ms)
+            val fastLocation = gpsUtils.getCurrentLocationFast()
+            if (fastLocation != null) {
+                Logger.i(Logger.Category.GPS, "Fast location obtained: ${fastLocation.latitude}, ${fastLocation.longitude}")
+                _currentLocation.value = fastLocation
                 
-                if (location != null) {
+                // Immediately fetch nearby anchors with fast location
+                val nearby = repository.getNearbyAnchors(
+                    fastLocation.latitude,
+                    fastLocation.longitude,
+                    NEARBY_RADIUS_METERS
+                )
+                _anchors.value = nearby
+                Logger.d(Logger.Category.DATA, "Found ${nearby.size} nearby anchors (fast)")
+                
+                // Also update all anchors for AR view
+                allAnchors.value = repository.getAllAnchors()
+                _isLoading.value = false
+            }
+            
+            // Then start continuous updates for real-time accuracy
+            gpsUtils.startLocationUpdates()
+            gpsUtils.locationFlow.collect { location ->
+                if (location != null && location != _currentLocation.value) {
+                    Logger.d(Logger.Category.GPS, "Continuous update: ${location.latitude}, ${location.longitude}")
+                    _currentLocation.value = location
+                    
                     // Update nearby list using 50m radius
                     val nearby = repository.getNearbyAnchors(
                         location.latitude, 
@@ -186,11 +210,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         NEARBY_RADIUS_METERS
                     )
                     _anchors.value = nearby
-                    Logger.d(Logger.Category.DATA, "Found ${nearby.size} nearby anchors")
+                    Logger.d(Logger.Category.DATA, "Found ${nearby.size} nearby anchors (continuous)")
 
                     // Update all anchors for AR view
                     allAnchors.value = repository.getAllAnchors()
                 }
+                _isLoading.value = false
             }
         }
     }
