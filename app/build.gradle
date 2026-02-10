@@ -33,6 +33,9 @@ android {
         def arApiKey = localProperties.getProperty('AR_CORE_API_KEY') ?: "YOUR_API_KEY_HERE"
 
         manifestPlaceholders = ["arCoreApiKey": arApiKey]
+
+        // UIv2 feature flag — set to false to revert to old UI
+        buildConfigField "boolean", "UIV2_ENABLED", "true"
     }
 
     buildTypes {
@@ -50,6 +53,7 @@ android {
     }
     buildFeatures {
         compose true
+        buildConfig true
     }
     composeOptions {
         kotlinCompilerExtensionVersion '1.5.4'
@@ -57,6 +61,13 @@ android {
     packagingOptions {
         resources {
             excludes += '/META-INF/{AL2.0,LGPL2.1}'
+        }
+        // Extract native libs at install time — bypasses 16KB page alignment
+        // checks for pre-compiled .so files from filament, mediapipe, camerax.
+        // These libraries will be aligned by their upstream maintainers in
+        // future releases; remove this workaround when upgrading.
+        jniLibs {
+            useLegacyPackaging = true
         }
     }
 }
@@ -109,6 +120,10 @@ dependencies {
 
     // Testing
     testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.mockito:mockito-core:5.8.0'
+    testImplementation 'org.mockito.kotlin:mockito-kotlin:5.2.1'
+    testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3'
+    testImplementation 'app.cash.turbine:turbine:1.0.0'
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
     androidTestImplementation platform('androidx.compose:compose-bom:2023.08.00')

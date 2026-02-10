@@ -30,6 +30,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.phantomcrowd.data.*
+import com.phantomcrowd.ui.theme.DesignSystem
 import com.phantomcrowd.utils.Logger
 import com.phantomcrowd.ai.ContentModerationHelper
 import com.phantomcrowd.ai.ModerationResult
@@ -156,13 +157,14 @@ fun PostCreationARScreen(
                 title = { 
                     Text(
                         when (formState.currentStep) {
-                            1 -> "Report Issue (1/5)"
-                            2 -> "Report Issue (2/5)"
-                            3 -> "Report Issue (3/5)"
-                            4 -> "Report Issue (4/5)"
+                            1 -> "Step 1/5 — Category"
+                            2 -> "Step 2/5 — Details"
+                            3 -> "Step 3/5 — Description"
+                            4 -> "Step 4/5 — AR Placement"
                             5 -> "Report Submitted"
                             else -> "Report Issue"
-                        }
+                        },
+                        style = DesignSystem.Typography.titleLarge
                     )
                 },
                 navigationIcon = {
@@ -176,7 +178,8 @@ fun PostCreationARScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                    containerColor = DesignSystem.Colors.surface,
+                    titleContentColor = DesignSystem.Colors.onSurface
                 )
             )
         }

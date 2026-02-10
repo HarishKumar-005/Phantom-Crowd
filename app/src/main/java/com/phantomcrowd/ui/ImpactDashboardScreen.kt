@@ -20,6 +20,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.phantomcrowd.data.*
+import com.phantomcrowd.ui.theme.DesignSystem
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
@@ -86,7 +87,7 @@ fun ImpactDashboardScreen(viewModel: MainViewModel) {
             totalReports = total,
             resolvedReports = resolved,
             redZones = redZones,
-            peopleReached = total * 100 // Estimate
+            peopleReached = total * 100 // Estimated reach
         )
         
         // Calculate per-use-case stats
@@ -226,8 +227,9 @@ fun ImpactDashboardScreen(viewModel: MainViewModel) {
 private fun OverallStatsCard(stats: OverallStats) {
     Card(
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer
-        )
+            containerColor = DesignSystem.Colors.primaryContainer
+        ),
+        shape = DesignSystem.Shapes.card
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
             Row(
@@ -257,7 +259,7 @@ private fun OverallStatsCard(stats: OverallStats) {
                 )
                 StatItem(
                     value = formatNumber(stats.peopleReached),
-                    label = "People Reached",
+                    label = "Estimated Reach",
                     icon = "👥"
                 )
             }
@@ -347,12 +349,12 @@ private fun UseCaseStatCard(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
-                QuickStat("Fixed", stat.resolvedReports.toString(), Color(0xFF4CAF50))
-                QuickStat("Pending", stat.pendingReports.toString(), Color(0xFFFF9800))
+                QuickStat("Fixed", stat.resolvedReports.toString(), DesignSystem.Colors.success)
+                QuickStat("Pending", stat.pendingReports.toString(), DesignSystem.Colors.warning)
                 QuickStat(
                     "Rate", 
                     "${(stat.resolutionRate * 100).toInt()}%", 
-                    MaterialTheme.colorScheme.primary
+                    DesignSystem.Colors.primary
                 )
             }
             

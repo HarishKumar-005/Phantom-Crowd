@@ -35,6 +35,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.phantomcrowd.data.AnchorData
+import com.phantomcrowd.ui.theme.DesignSystem
 import com.phantomcrowd.utils.BearingCalculator
 
 /**
@@ -57,7 +58,7 @@ fun NavigationTab(
         Box(
             modifier = modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.9f)),
+                .background(DesignSystem.Colors.background),
             contentAlignment = Alignment.Center
         ) {
             Column(
@@ -71,15 +72,15 @@ fun NavigationTab(
                 Spacer(modifier = Modifier.height(24.dp))
                 Text(
                     text = "No Target Selected",
-                    fontSize = 24.sp,
+                    style = DesignSystem.Typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White
+                    color = DesignSystem.Colors.onSurface
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
-                    text = "Go to Map tab and tap a message\nto start navigation",
-                    fontSize = 16.sp,
-                    color = Color.White.copy(alpha = 0.7f),
+                    text = "Go to Map tab and tap a marker\nto start navigation.",
+                    style = DesignSystem.Typography.bodyMedium,
+                    color = DesignSystem.Colors.neutralMuted,
                     textAlign = TextAlign.Center
                 )
             }
@@ -130,10 +131,10 @@ fun NavigationTab(
 
     // Color based on distance: Green (<20m), Yellow (20-50m), Red (>50m)
     val arrowColor = when {
-        distance < 5 -> Color(0xFF4CAF50)   // Bright Green - Arrived!
-        distance < 20 -> Color(0xFF8BC34A)  // Light Green - Very close
-        distance < 50 -> Color(0xFFFFEB3B)  // Yellow - Close
-        else -> Color(0xFFFF5722)           // Orange-Red - Far
+        distance < 5 -> DesignSystem.Colors.success      // Arrived!
+        distance < 20 -> DesignSystem.Colors.severityLow  // Very close
+        distance < 50 -> DesignSystem.Colors.warning       // Close
+        else -> DesignSystem.Colors.severityHigh           // Far
     }
 
     // Calculate progress (from start location to target)
@@ -156,7 +157,7 @@ fun NavigationTab(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.9f)),
+            .background(DesignSystem.Colors.background),
         contentAlignment = Alignment.Center
     ) {
         Column(
@@ -209,9 +210,9 @@ fun NavigationTab(
             // Distance + Direction text
             Text(
                 text = "${distance.toInt()}m ${BearingCalculator.bearingToCardinal(bearing.toDouble())}",
-                fontSize = 36.sp,
+                style = DesignSystem.Typography.displayLarge,
                 fontWeight = FontWeight.Bold,
-                color = Color.White,
+                color = DesignSystem.Colors.onSurface,
                 textAlign = TextAlign.Center
             )
 
@@ -223,8 +224,8 @@ fun NavigationTab(
                 modifier = Modifier
                     .width(280.dp)
                     .height(12.dp),
-                color = Color(0xFF4CAF50),
-                trackColor = Color.Gray.copy(alpha = 0.5f)
+                color = DesignSystem.Colors.success,
+                trackColor = DesignSystem.Colors.outline
             )
 
             Text(
@@ -267,17 +268,17 @@ fun NavigationTab(
                 Spacer(modifier = Modifier.height(32.dp))
                 
                 Text(
-                    text = "🎉 YOU ARRIVED! 🎉",
-                    fontSize = 32.sp,
+                    text = "✅ You've arrived!",
+                    style = DesignSystem.Typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFF4CAF50),
+                    color = DesignSystem.Colors.success,
                     textAlign = TextAlign.Center
                 )
                 
                 Text(
-                    text = "Switch to AR View to see the message",
-                    fontSize = 14.sp,
-                    color = Color(0xFF4CAF50).copy(alpha = 0.8f),
+                    text = "Switch to AR View to see the report.",
+                    style = DesignSystem.Typography.bodyMedium,
+                    color = DesignSystem.Colors.neutralMuted,
                     modifier = Modifier.padding(top = 8.dp)
                 )
             }

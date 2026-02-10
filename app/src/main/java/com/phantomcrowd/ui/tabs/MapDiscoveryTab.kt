@@ -23,6 +23,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import com.phantomcrowd.data.AnchorData
+import com.phantomcrowd.ui.components.HeatmapLegend
+import com.phantomcrowd.ui.theme.DesignSystem
 import com.phantomcrowd.utils.HeatmapRenderer
 import org.osmdroid.config.Configuration
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
@@ -170,22 +172,31 @@ fun MapDiscoveryTab(
             Column(
                 modifier = Modifier
                     .align(Alignment.TopStart)
-                    .padding(16.dp)
+                    .padding(DesignSystem.Spacing.md)
                     .background(
-                        color = Color.Black.copy(alpha = 0.6f),
-                        shape = RoundedCornerShape(8.dp)
+                        color = DesignSystem.Colors.surface.copy(alpha = 0.92f),
+                        shape = DesignSystem.Shapes.card
                     )
-                    .padding(12.dp)
+                    .padding(DesignSystem.Spacing.sm)
             ) {
                 Text(
-                    text = "📍 ${String.format("%.5f", userLocation.latitude)}, ${String.format("%.5f", userLocation.longitude)}",
-                    color = Color.White,
-                    style = MaterialTheme.typography.bodySmall
+                    text = "${String.format("%.5f", userLocation.latitude)}, ${String.format("%.5f", userLocation.longitude)}",
+                    color = DesignSystem.Colors.neutralMuted,
+                    style = DesignSystem.Typography.labelLarge
                 )
                 Text(
-                    text = "🗺️ ${nearbyAnchors.size} messages nearby",
-                    color = Color.White,
-                    style = MaterialTheme.typography.bodySmall
+                    text = "${nearbyAnchors.size} reports nearby",
+                    color = DesignSystem.Colors.onSurface,
+                    style = DesignSystem.Typography.bodyMedium
+                )
+            }
+            
+            // Heatmap legend (bottom-end)
+            if (showHeatmap) {
+                HeatmapLegend(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(DesignSystem.Spacing.md)
                 )
             }
         }

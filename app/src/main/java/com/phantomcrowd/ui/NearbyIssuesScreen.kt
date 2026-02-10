@@ -29,6 +29,8 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.phantomcrowd.data.*
+import com.phantomcrowd.ui.components.SeverityBadge
+import com.phantomcrowd.ui.theme.DesignSystem
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
@@ -52,9 +54,9 @@ fun Modifier.shimmerEffect(): Modifier = composed {
     background(
         brush = Brush.linearGradient(
             colors = listOf(
-                Color(0xFFB8B5B5),
-                Color(0xFF8F8B8B),
-                Color(0xFFB8B5B5),
+                DesignSystem.Colors.outline,
+                DesignSystem.Colors.surfaceVariant,
+                DesignSystem.Colors.outline,
             ),
             start = Offset(startOffsetX, 0f),
             end = Offset(startOffsetX + size.width.toFloat(), size.height.toFloat())
@@ -137,9 +139,11 @@ fun NearbyIssuesScreen(
                 onClick = {
                     haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
                     viewModel.updateLocation()
-                }
+                },
+                containerColor = DesignSystem.Colors.primary,
+                contentColor = DesignSystem.Colors.onPrimary
             ) {
-                Icon(Icons.Filled.Refresh, contentDescription = "Refresh")
+                Icon(Icons.Filled.Refresh, contentDescription = "Refresh nearby issues")
             }
         }
     ) { padding ->
@@ -169,9 +173,9 @@ fun NearbyIssuesScreen(
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                     colors = CardDefaults.cardColors(
-                        containerColor = Color(0xFFFFE0B2) // Warm orange background
+                        containerColor = DesignSystem.Colors.primaryContainer
                     ),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = DesignSystem.Shapes.card
                 ) {
                     Row(
                         modifier = Modifier
@@ -182,35 +186,34 @@ fun NearbyIssuesScreen(
                     ) {
                         Icon(
                             Icons.Filled.LocationOn,
-                            contentDescription = null,
-                            tint = Color(0xFFE65100),
+                            contentDescription = "Location disabled",
+                            tint = DesignSystem.Colors.primary,
                             modifier = Modifier.size(32.dp)
                         )
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "📍 Enable Location",
+                                text = "Enable Location",
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFFE65100),
-                                fontSize = 15.sp
+                                color = DesignSystem.Colors.onSurface,
+                                style = DesignSystem.Typography.bodyLarge
                             )
                             Text(
-                                text = "Turn on GPS to discover nearby issues and reports in your area",
-                                color = Color(0xFF5D4037),
-                                fontSize = 12.sp
+                                text = "Turn on GPS to discover nearby reports in your area.",
+                                color = DesignSystem.Colors.neutralMuted,
+                                style = DesignSystem.Typography.bodyMedium
                             )
                         }
                         Button(
                             onClick = {
-                                // Open location settings
                                 val intent = android.content.Intent(android.provider.Settings.ACTION_LOCATION_SOURCE_SETTINGS)
                                 context.startActivity(intent)
                             },
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFFE65100)
+                                containerColor = DesignSystem.Colors.primary
                             ),
-                            shape = RoundedCornerShape(8.dp)
+                            shape = DesignSystem.Shapes.chip
                         ) {
-                            Text("Enable", color = Color.White, fontSize = 12.sp)
+                            Text("Enable", color = DesignSystem.Colors.onPrimary, style = DesignSystem.Typography.labelLarge)
                         }
                     }
                 }
@@ -436,22 +439,23 @@ private fun EmptyState(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.padding(32.dp)
         ) {
-            Text("✨", fontSize = 64.sp)
+            Text("📍", fontSize = 64.sp)
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                "All Clear!",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold
+                if (hasFilters) "No matching reports" else "No recent reports nearby",
+                style = DesignSystem.Typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color = DesignSystem.Colors.onSurface
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 if (hasFilters) {
-                    "No issues match your current filters."
+                    "No issues match your current filters. Try a different category."
                 } else {
-                    "No issues reported in this area.\nEverything looks good!"
+                    "No recent reports nearby.\nTap + to report anonymously and help your community."
                 },
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = DesignSystem.Typography.bodyMedium,
+                color = DesignSystem.Colors.neutralMuted,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center
             )
             if (hasFilters) {
@@ -506,13 +510,10 @@ fun EnhancedIssueCard(
         )
     }
     
-    // Card background color based on use case
-    val cardBackgroundColor = useCase?.color?.copy(alpha = 0.05f) 
-        ?: MaterialTheme.colorScheme.surface
-
+    // Card uses design system surface with outline
     Card(
         elevation = CardDefaults.cardElevation(
-            defaultElevation = if (isExpanded) 8.dp else 2.dp
+            defaultElevation = DesignSystem.Elevation.smallCard
         ),
         modifier = Modifier
             .fillMaxWidth()
@@ -523,7 +524,9 @@ fun EnhancedIssueCard(
                     stiffness = Spring.StiffnessLow
                 )
             ),
-        colors = CardDefaults.cardColors(containerColor = cardBackgroundColor)
+        colors = CardDefaults.cardColors(containerColor = DesignSystem.Colors.surface),
+        border = androidx.compose.foundation.BorderStroke(1.dp, DesignSystem.Colors.outline),
+        shape = DesignSystem.Shapes.card
     ) {
         Column(modifier = Modifier
             .fillMaxWidth()
@@ -543,9 +546,9 @@ fun EnhancedIssueCard(
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             useCase.label,
-                            style = MaterialTheme.typography.labelLarge,
+                            style = DesignSystem.Typography.labelLarge,
                             fontWeight = FontWeight.Bold,
-                            color = useCase.color
+                            color = DesignSystem.Colors.primary
                         )
                     } else {
                         Text(
@@ -556,20 +559,8 @@ fun EnhancedIssueCard(
                     }
                 }
                 
-                // Severity badge
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(severity.color.copy(alpha = 0.2f))
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                ) {
-                    Text(
-                        "${severity.icon} ${severity.label.uppercase()}",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = severity.color
-                    )
-                }
+                // Severity badge (new component)
+                SeverityBadge(severityName = anchor.severity)
             }
             
             Spacer(modifier = Modifier.height(12.dp))
@@ -649,7 +640,7 @@ fun EnhancedIssueCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Upvote button
+                // Confirm button (replaces upvote)
                 FilledTonalButton(
                     onClick = {
                         if (!hasUpvoted) {
@@ -663,23 +654,24 @@ fun EnhancedIssueCard(
                     enabled = !hasUpvoted,
                     colors = ButtonDefaults.filledTonalButtonColors(
                         containerColor = if (hasUpvoted) 
-                            MaterialTheme.colorScheme.primaryContainer 
+                            DesignSystem.Colors.primaryContainer 
                         else 
-                            MaterialTheme.colorScheme.secondaryContainer
+                            DesignSystem.Colors.surfaceVariant
                     ),
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
                 ) {
                     Text(
-                        "👍 $localUpvotes",
-                        style = MaterialTheme.typography.labelMedium
+                        if (hasUpvoted) "✓ Confirmed $localUpvotes" else "Confirm $localUpvotes",
+                        style = DesignSystem.Typography.labelLarge,
+                        color = if (hasUpvoted) DesignSystem.Colors.primary else DesignSystem.Colors.onSurface
                     )
                 }
                 
                 // Expand indicator
                 Text(
                     if (isExpanded) "▲ Less" else "▼ More",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary
+                    style = DesignSystem.Typography.labelLarge,
+                    color = DesignSystem.Colors.primary
                 )
             }
             
@@ -734,13 +726,18 @@ fun EnhancedIssueCard(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        // Navigate button
+                        // Navigate — prominent CTA
                         if (onNavigate != null) {
-                            OutlinedButton(
+                            Button(
                                 onClick = { onNavigate() },
-                                modifier = Modifier.weight(1f)
+                                modifier = Modifier.weight(1f),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = DesignSystem.Colors.secondary,
+                                    contentColor = DesignSystem.Colors.onSecondary
+                                ),
+                                shape = DesignSystem.Shapes.pill
                             ) {
-                                Text("🧭 Navigate")
+                                Text("Navigate", style = DesignSystem.Typography.labelLarge)
                             }
                         }
                         

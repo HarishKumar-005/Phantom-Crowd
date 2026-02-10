@@ -33,6 +33,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
 import com.phantomcrowd.data.AnchorData
+import com.phantomcrowd.ui.theme.DesignSystem
 import com.phantomcrowd.utils.BearingCalculator
 import com.phantomcrowd.utils.Logger
 import java.util.concurrent.ExecutorService
@@ -207,11 +208,11 @@ fun ARViewScreen(
                     else -> 0.8f
                 }
                 
-                // Color based on category
+                // Color based on category — using design tokens
                 val labelColor = when (visible.anchor.category.lowercase()) {
-                    "safety" -> Color(0xFFE53935)  // Red
-                    "facility" -> Color(0xFF1E88E5)  // Blue
-                    else -> Color(0xFF43A047)  // Green
+                    "safety" -> DesignSystem.Colors.severityHigh
+                    "facility" -> DesignSystem.Colors.primary
+                    else -> DesignSystem.Colors.success
                 }
                 
                 // Vertical position based on index (stack labels)
@@ -238,13 +239,13 @@ fun ARViewScreen(
         ) {
             // Status chip
             Surface(
-                color = if (cameraReady) Color(0xFF4CAF50) else Color(0xFFFF9800),
-                shape = RoundedCornerShape(16.dp)
+                color = if (cameraReady) DesignSystem.Colors.success else DesignSystem.Colors.warning,
+                shape = DesignSystem.Shapes.pill
             ) {
                 Text(
-                    text = if (cameraReady) "🎯 AR Active" else "⏳ Initializing",
+                    text = if (cameraReady) "AR Active" else "Initializing…",
                     color = Color.White,
-                    fontSize = 12.sp,
+                    style = DesignSystem.Typography.labelLarge,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                 )
@@ -376,7 +377,10 @@ private fun IssueLabel(
                     scaleX = scale,
                     scaleY = scale
                 )
-                .background(color.copy(alpha = 0.9f), RoundedCornerShape(12.dp))
+                .background(
+                    DesignSystem.Colors.surface.copy(alpha = 0.92f),
+                    DesignSystem.Shapes.card
+                )
                 .padding(horizontal = 12.dp, vertical = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
@@ -393,8 +397,8 @@ private fun IssueLabel(
             // Issue text
             Text(
                 text = anchor.messageText,
-                color = Color.White,
-                fontSize = 12.sp,
+                color = DesignSystem.Colors.onSurface,
+                style = DesignSystem.Typography.labelLarge,
                 fontWeight = FontWeight.Bold,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
@@ -405,8 +409,8 @@ private fun IssueLabel(
             // Distance
             Text(
                 text = if (distance < 1000) "${distance.toInt()}m" else "${String.format("%.1f", distance/1000)}km",
-                color = Color.White.copy(alpha = 0.8f),
-                fontSize = 10.sp
+                color = DesignSystem.Colors.neutralMuted,
+                style = DesignSystem.Typography.labelLarge
             )
         }
     }
