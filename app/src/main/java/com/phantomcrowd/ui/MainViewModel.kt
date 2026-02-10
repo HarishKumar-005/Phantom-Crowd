@@ -91,6 +91,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val syncStatus: StateFlow<String> = _syncStatus.asStateFlow()
     
     private var cloudSyncJob: Job? = null
+    private var locationUpdateJob: Job? = null
     
     // Phase B: Heatmap Visualization
     private val _showHeatmap = MutableStateFlow(false)
@@ -182,6 +183,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * Start or refresh location updates and nearby anchors.
      * Uses fast location first (instant), then starts continuous updates.
      * Debounced: skips calls within 2s of the last one to prevent duplicate fetches.
+     * Cancels previous job if re-invoked to prevent parallel duplicate flows.
      */
     fun updateLocation() {
         val now = System.currentTimeMillis()
@@ -192,7 +194,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         lastUpdateMs = now
         Logger.d(Logger.Category.GPS, "updateLocation() called")
         
-        viewModelScope.launch(exceptionHandler) {
+        // Cancel any previous location update job to prevent duplicate flows
+        locationUpdateJob?.cancel()
+        
+        locationUpdateJob = viewModelScope.launch(exceptionHandler) {
             _isLoading.value = true
             
             // FAST: Get location immediately using getCurrentLocation API (~500ms)
@@ -212,7 +217,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _anchors.value = nearby
                 Logger.d(Logger.Category.DATA, "Found ${nearby.size} nearby anchors (fast)")
                 
-                // Also update all anchors for AR view
+                // Also update all anchors for AR view (only on initial fetch)
                 allAnchors.value = withContext(Dispatchers.IO) {
                     repository.getAllAnchors()
                 }
@@ -226,7 +231,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     Logger.d(Logger.Category.GPS, "Continuous update: ${location.latitude}, ${location.longitude}")
                     _currentLocation.value = location
                     
-                    // Update nearby list on IO thread
+                    // Only update nearby list on continuous updates (not allAnchors — those don't change with location)
                     val nearby = withContext(Dispatchers.IO) {
                         repository.getNearbyAnchors(
                             location.latitude, 
@@ -236,11 +241,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     _anchors.value = nearby
                     Logger.d(Logger.Category.DATA, "Found ${nearby.size} nearby anchors (continuous)")
-
-                    // Update all anchors for AR view
-                    allAnchors.value = withContext(Dispatchers.IO) {
-                        repository.getAllAnchors()
-                    }
                 }
                 _isLoading.value = false
             }

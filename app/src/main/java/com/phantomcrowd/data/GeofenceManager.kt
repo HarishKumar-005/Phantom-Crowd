@@ -44,7 +44,7 @@ class GeofenceManager(private val context: Context) {
             }
             
             val geofencingRequest = GeofencingRequest.Builder()
-                .setInitialTrigger(GeofencingRequest.INITIAL_TRIGGER_ENTER)
+                .setInitialTrigger(0) // Don't fire when already inside — only on future ENTER
                 .addGeofences(geofenceList)
                 .build()
             
