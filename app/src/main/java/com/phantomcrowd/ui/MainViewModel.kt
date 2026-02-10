@@ -18,10 +18,12 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Main ViewModel for the Phantom Crowd app.
@@ -128,9 +130,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _isLoading.value = false
     }
 
+    // Debounce guard for updateLocation — prevents 4× duplicate calls on cold start
+    private var lastUpdateMs = 0L
+
     init {
         Logger.d(Logger.Category.UI, "MainViewModel initialized")
-        loadAnchors()
+        // Deferred init: load anchors on IO thread to avoid blocking first frame
+        viewModelScope.launch(Dispatchers.IO + exceptionHandler) {
+            val anchors = repository.getAllAnchors()
+            withContext(Dispatchers.Main) {
+                allAnchors.value = anchors
+                Logger.d(Logger.Category.DATA, "Loaded ${anchors.size} total anchors")
+            }
+        }
         
         // Monitor network status (Phase E)
         NetworkHelper.networkStatusFlow(application)
@@ -169,8 +181,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /**
      * Start or refresh location updates and nearby anchors.
      * Uses fast location first (instant), then starts continuous updates.
+     * Debounced: skips calls within 2s of the last one to prevent duplicate fetches.
      */
     fun updateLocation() {
+        val now = System.currentTimeMillis()
+        if (now - lastUpdateMs < 2000) {
+            Logger.d(Logger.Category.GPS, "updateLocation() debounced — skipping")
+            return
+        }
+        lastUpdateMs = now
         Logger.d(Logger.Category.GPS, "updateLocation() called")
         
         viewModelScope.launch(exceptionHandler) {
@@ -182,17 +201,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 Logger.i(Logger.Category.GPS, "Fast location obtained: ${fastLocation.latitude}, ${fastLocation.longitude}")
                 _currentLocation.value = fastLocation
                 
-                // Immediately fetch nearby anchors with fast location
-                val nearby = repository.getNearbyAnchors(
-                    fastLocation.latitude,
-                    fastLocation.longitude,
-                    NEARBY_RADIUS_METERS
-                )
+                // Fetch nearby anchors on IO thread to avoid main-thread Firestore reads
+                val nearby = withContext(Dispatchers.IO) {
+                    repository.getNearbyAnchors(
+                        fastLocation.latitude,
+                        fastLocation.longitude,
+                        NEARBY_RADIUS_METERS
+                    )
+                }
                 _anchors.value = nearby
                 Logger.d(Logger.Category.DATA, "Found ${nearby.size} nearby anchors (fast)")
                 
                 // Also update all anchors for AR view
-                allAnchors.value = repository.getAllAnchors()
+                allAnchors.value = withContext(Dispatchers.IO) {
+                    repository.getAllAnchors()
+                }
                 _isLoading.value = false
             }
             
@@ -203,17 +226,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     Logger.d(Logger.Category.GPS, "Continuous update: ${location.latitude}, ${location.longitude}")
                     _currentLocation.value = location
                     
-                    // Update nearby list using 50m radius
-                    val nearby = repository.getNearbyAnchors(
-                        location.latitude, 
-                        location.longitude, 
-                        NEARBY_RADIUS_METERS
-                    )
+                    // Update nearby list on IO thread
+                    val nearby = withContext(Dispatchers.IO) {
+                        repository.getNearbyAnchors(
+                            location.latitude, 
+                            location.longitude, 
+                            NEARBY_RADIUS_METERS
+                        )
+                    }
                     _anchors.value = nearby
                     Logger.d(Logger.Category.DATA, "Found ${nearby.size} nearby anchors (continuous)")
 
                     // Update all anchors for AR view
-                    allAnchors.value = repository.getAllAnchors()
+                    allAnchors.value = withContext(Dispatchers.IO) {
+                        repository.getAllAnchors()
+                    }
                 }
                 _isLoading.value = false
             }
