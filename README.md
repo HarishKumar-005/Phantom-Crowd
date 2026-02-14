@@ -269,7 +269,7 @@ phantom-crowd/
 
 ---
 
-## 🏆 Hackathon Details
+## 🏆 Hackathon Details :
 
 **Team name:** Tech Pros
 
