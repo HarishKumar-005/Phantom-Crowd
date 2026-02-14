@@ -326,7 +326,31 @@ class FirebaseAnchorManager(private val firestore: FirebaseFirestore) {
                 }
                 if (snapshot != null) {
                     latestIssues = try {
-                        snapshot.toObjects(AnchorData::class.java)
+                        snapshot.documents.mapNotNull { doc ->
+                            try {
+                                val data = doc.data ?: return@mapNotNull null
+                                AnchorData(
+                                    id = doc.id,
+                                    messageText = data["messageText"] as? String ?: "",
+                                    category = data["category"] as? String ?: "general",
+                                    latitude = (data["latitude"] as? Number)?.toDouble() ?: 0.0,
+                                    longitude = (data["longitude"] as? Number)?.toDouble() ?: 0.0,
+                                    altitude = (data["altitude"] as? Number)?.toDouble() ?: 0.0,
+                                    geohash = data["geohash"] as? String ?: "",
+                                    timestamp = getTimestampMs(data["timestamp"]),
+                                    status = data["status"] as? String ?: "PENDING",
+                                    severity = data["severity"] as? String ?: "MEDIUM",
+                                    useCase = data["useCase"] as? String ?: "",
+                                    useCaseCategory = data["useCaseCategory"] as? String ?: "",
+                                    locationName = data["locationName"] as? String ?: "",
+                                    nearbyIssueCount = (data["nearbyIssueCount"] as? Number)?.toInt() ?: 0,
+                                    upvotes = (data["upvotes"] as? Number)?.toInt() ?: 0
+                                )
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Impact: issue parse error for ${doc.id}: ${e.message}")
+                                null
+                            }
+                        }
                     } catch (e: Exception) {
                         Log.e(TAG, "Impact: issues parse error: ${e.message}")
                         emptyList()
@@ -433,10 +457,33 @@ class FirebaseAnchorManager(private val firestore: FirebaseFirestore) {
     ): ImpactStats {
         val total = allReports.size
 
-        // Status helper: read status directly from document, default PENDING
+        // Build a map of issueId → latest action type from authority_actions
+        // This acts as the secondary source of truth when the doc's own status is stale
+        val latestActionByIssue: Map<String, String> = allActions
+            .groupBy { it.issueId }
+            .mapValues { (_, actions) ->
+                actions.maxByOrNull { it.timestamp }?.actionType?.uppercase() ?: ""
+            }
+
+        // Status helper: checks the document's own status first,
+        // then falls back to the latest authority_action for that issue.
+        // This covers two scenarios:
+        //   1. Normal case: admin updates both authority_actions AND the doc → doc.status is correct
+        //   2. Edge case: admin action succeeded but doc update failed/lagged → action overrides
+        val validStatuses = setOf("PENDING", "IN_PROGRESS", "RESOLVED", "REJECTED")
+
         fun AnchorData.realStatus(): String {
-            val s = status.uppercase().ifEmpty { "PENDING" }
-            return if (s in listOf("PENDING", "IN_PROGRESS", "RESOLVED", "REJECTED")) s else "PENDING"
+            val docStatus = status.uppercase().trim().ifEmpty { "PENDING" }
+            if (docStatus in validStatuses && docStatus != "PENDING") return docStatus
+
+            // If doc is "PENDING", check if an authority_action overrides it
+            val actionStatus = latestActionByIssue[id]
+                ?: latestActionByIssue[id.removePrefix("surface_")]
+            if (!actionStatus.isNullOrEmpty() && actionStatus in validStatuses) {
+                return actionStatus
+            }
+
+            return if (docStatus in validStatuses) docStatus else "PENDING"
         }
 
         val fixed = allReports.count { it.realStatus() == "RESOLVED" }
