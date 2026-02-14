@@ -18,7 +18,7 @@ class AnchorDataTest {
         assertEquals(0, anchor.upvotes)
         assertEquals("", anchor.useCase)
         assertEquals("", anchor.useCaseCategory)
-        assertEquals("", anchor.status)
+        assertEquals("PENDING", anchor.status)
         assertEquals("", anchor.messageText)
         assertEquals(0.0, anchor.latitude, 0.0)
         assertEquals(0.0, anchor.longitude, 0.0)

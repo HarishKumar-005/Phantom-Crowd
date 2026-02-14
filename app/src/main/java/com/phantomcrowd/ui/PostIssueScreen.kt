@@ -18,7 +18,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun PostIssueScreen(
     viewModel: MainViewModel,
-    onOpenARPlacement: ((messageText: String, category: String) -> Unit)? = null
+    onOpenARPlacement: ((messageText: String, category: String, severity: String, useCase: String) -> Unit)? = null
 ) {
     var messageText by remember { mutableStateOf("") }
     var expanded by remember { mutableStateOf(false) }
@@ -142,7 +142,7 @@ fun PostIssueScreen(
         Button(
             onClick = {
                 if (messageText.isNotBlank()) {
-                    onOpenARPlacement?.invoke(messageText, selectedCategory)
+                    onOpenARPlacement?.invoke(messageText, selectedCategory, "MEDIUM", "")
                         ?: Toast.makeText(context, "AR Placement not available", Toast.LENGTH_SHORT).show()
                 } else {
                     Toast.makeText(context, "Enter a message first", Toast.LENGTH_SHORT).show()

@@ -92,6 +92,8 @@ fun MainScreen(viewModel: MainViewModel) {
     var showSurfaceAnchorScreen by remember { mutableStateOf(false) }
     var surfaceAnchorMessageText by remember { mutableStateOf("") }
     var surfaceAnchorCategory by remember { mutableStateOf("General") }
+    var surfaceAnchorSeverity by remember { mutableStateOf("MEDIUM") }
+    var surfaceAnchorUseCase by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
     
     val permissions = arrayOf(
@@ -177,10 +179,12 @@ fun MainScreen(viewModel: MainViewModel) {
                         viewModel.updateLocation() // Refresh issues
                     },
                     onCancel = { selectedTab = 0 }, // Go to Nearby tab
-                    onOpenARPlacement = { messageText, category ->
-                        // Store message and category
+                    onOpenARPlacement = { messageText, category, severity, useCase ->
+                        // Store message, category, severity, and useCase
                         surfaceAnchorMessageText = messageText
                         surfaceAnchorCategory = category
+                        surfaceAnchorSeverity = severity
+                        surfaceAnchorUseCase = useCase
                         
                         // Release CameraX before opening ARCore-based SurfaceAnchorScreen
                         scope.launch {
@@ -344,6 +348,8 @@ fun MainScreen(viewModel: MainViewModel) {
             SurfaceAnchorScreen(
                 messageText = surfaceAnchorMessageText,
                 category = surfaceAnchorCategory,
+                severity = surfaceAnchorSeverity,
+                useCase = surfaceAnchorUseCase,
                 userLocation = currentLocation,
                 onAnchorPlaced = { anchor ->
                     // Save anchor to Firestore

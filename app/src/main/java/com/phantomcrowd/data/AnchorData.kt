@@ -35,6 +35,6 @@ data class AnchorData(
     val severity: String = "MEDIUM",    // Severity enum name (URGENT, HIGH, MEDIUM, LOW)
     val locationName: String = "",      // Reverse geocoded or user entered location name
     val nearbyIssueCount: Int = 0,      // Calculated: count of nearby issues
-    val status: String = ""             // Issue status (e.g., "PENDING", "RESOLVED", "IN_PROGRESS")
+    val status: String = "PENDING"             // Issue status (e.g., "PENDING", "RESOLVED", "IN_PROGRESS")
 )
 

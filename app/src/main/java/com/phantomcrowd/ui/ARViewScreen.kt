@@ -20,7 +20,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -39,6 +42,7 @@ import com.phantomcrowd.utils.Logger
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import kotlin.math.abs
+import androidx.compose.animation.core.*
 
 /**
  * ARViewScreen - Simplified AR View with CameraX and Overlay Labels
@@ -208,13 +212,6 @@ fun ARViewScreen(
                     else -> 0.8f
                 }
                 
-                // Color based on category — using design tokens
-                val labelColor = when (visible.anchor.category.lowercase()) {
-                    "safety" -> DesignSystem.Colors.severityHigh
-                    "facility" -> DesignSystem.Colors.primary
-                    else -> DesignSystem.Colors.success
-                }
-                
                 // Vertical position based on index (stack labels)
                 val yPosition = 0.3f + (index * 0.12f)
                 
@@ -224,7 +221,6 @@ fun ARViewScreen(
                     xOffset = xOffset,
                     yPosition = yPosition,
                     scale = scale,
-                    color = labelColor,
                     modifier = Modifier.align(Alignment.TopCenter)
                 )
             }
@@ -352,7 +348,47 @@ private data class VisibleAnchor(
 )
 
 /**
- * Floating issue label composable
+ * Get severity color from the anchor's severity field.
+ */
+private fun getSeverityColor(severity: String): Color {
+    return when (severity.uppercase()) {
+        "URGENT"  -> Color(0xFFFF1744)   // Vivid red
+        "HIGH"    -> DesignSystem.Colors.severityHigh    // #D6453D
+        "MEDIUM"  -> DesignSystem.Colors.severityMedium  // #E67A00
+        "LOW"     -> DesignSystem.Colors.severityLow     // #2E9B5D
+        else      -> DesignSystem.Colors.severityMedium
+    }
+}
+
+/**
+ * Get category icon.
+ */
+private fun getCategoryIcon(category: String, severity: String): String {
+    return when (severity.uppercase()) {
+        "URGENT" -> "🚨"
+        "HIGH"   -> "⚠\uFE0F"
+        else -> when (category.lowercase()) {
+            "safety", "assault", "harassment", "stalking", "unsafe_area" -> "🛡\uFE0F"
+            "facility", "infrastructure", "broken_light", "pothole"     -> "🏗\uFE0F"
+            "traffic", "accident", "signal", "road"                     -> "🚦"
+            "sanitation", "garbage", "waste", "pollution"               -> "♻\uFE0F"
+            "noise", "disturbance"                                      -> "🔊"
+            else                                                        -> "📍"
+        }
+    }
+}
+
+/**
+ * Floating issue label composable — Dark glassmorphic card with severity accent.
+ *
+ * Design:
+ *  ┌──────────────────────────┐
+ *  │ ● 🚨 Issue message text  │  ← severity-colored dot + icon
+ *  │      12m • URGENT        │  ← distance + severity label
+ *  └──────────────────────────┘
+ *  Left 3dp border = severity color
+ *  Background = dark translucent (#0D1117 @ 88%)
+ *  Subtle bottom glow for URGENT/HIGH
  */
 @Composable
 private fun IssueLabel(
@@ -361,57 +397,127 @@ private fun IssueLabel(
     xOffset: Float,
     yPosition: Float,
     scale: Float,
-    color: Color,
     modifier: Modifier = Modifier
 ) {
+    val severityColor = getSeverityColor(anchor.severity)
+    val isUrgent = anchor.severity.uppercase() in listOf("URGENT", "HIGH")
+
+    // Pulsing animation for URGENT/HIGH severity
+    val infiniteTransition = rememberInfiniteTransition(label = "severity_pulse")
+    val pulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.7f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(800, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulse"
+    )
+
+    val dotAlpha = if (isUrgent) pulseAlpha else 1f
+    val categoryIcon = getCategoryIcon(anchor.category, anchor.severity)
+    val distanceText = if (distance < 1000) "${distance.toInt()}m" else "${String.format("%.1f", distance / 1000)}km"
+    val severityLabel = anchor.severity.ifEmpty { "MEDIUM" }.uppercase()
+
+    // Frosted indigo card with subtle severity tint
+    // — not pure black (too harsh), not white (invisible)
+    // — deep indigo base picks up a whisper of the severity hue
+    val cardBase = Color(0xFF1A1A2E)        // Deep indigo
+    val cardBg = androidx.compose.ui.graphics.lerp(cardBase, severityColor, 0.08f)
+        .copy(alpha = 0.82f)
+    val borderShape = RoundedCornerShape(
+        topStart = 0.dp, bottomStart = 0.dp,
+        topEnd = 12.dp, bottomEnd = 12.dp
+    )
+
     Box(
         modifier = modifier
             .fillMaxSize()
             .padding(horizontal = 32.dp)
     ) {
-        Column(
+        Row(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .offset(x = (xOffset * 150).dp, y = (yPosition * 1000).dp)
-                .graphicsLayer(
-                    scaleX = scale,
-                    scaleY = scale
-                )
-                .background(
-                    DesignSystem.Colors.surface.copy(alpha = 0.92f),
-                    DesignSystem.Shapes.card
-                )
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+                .graphicsLayer(scaleX = scale, scaleY = scale)
+                .widthIn(min = 140.dp, max = 200.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            // Category icon
-            Text(
-                text = when (anchor.category.lowercase()) {
-                    "safety" -> "⚠️"
-                    "facility" -> "🏢"
-                    else -> "📍"
-                },
-                fontSize = 16.sp
+            // ── Left severity accent bar ──────────────────────
+            Box(
+                modifier = Modifier
+                    .width(4.dp)
+                    .height(56.dp)
+                    .clip(RoundedCornerShape(topStart = 12.dp, bottomStart = 12.dp))
+                    .background(severityColor.copy(alpha = dotAlpha))
             )
-            
-            // Issue text
-            Text(
-                text = anchor.messageText,
-                color = DesignSystem.Colors.onSurface,
-                style = DesignSystem.Typography.labelLarge,
-                fontWeight = FontWeight.Bold,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.widthIn(max = 120.dp)
-            )
-            
-            // Distance
-            Text(
-                text = if (distance < 1000) "${distance.toInt()}m" else "${String.format("%.1f", distance/1000)}km",
-                color = DesignSystem.Colors.neutralMuted,
-                style = DesignSystem.Typography.labelLarge
-            )
+
+            // ── Card body ────────────────────────────────────
+            Column(
+                modifier = Modifier
+                    .clip(borderShape)
+                    .background(cardBg)
+                    .padding(start = 10.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
+                verticalArrangement = Arrangement.Center
+            ) {
+                // Top row: severity dot + icon + text
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    // Severity dot (pulsing for URGENT/HIGH)
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .background(
+                                severityColor.copy(alpha = dotAlpha),
+                                RoundedCornerShape(50)
+                            )
+                    )
+                    // Category icon
+                    Text(categoryIcon, fontSize = 14.sp)
+                    // Message
+                    Text(
+                        text = anchor.messageText.ifEmpty { anchor.category },
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(3.dp))
+
+                // Bottom row: distance + severity badge
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = distanceText,
+                        color = Color.White.copy(alpha = 0.65f),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+
+                    // Severity badge
+                    Text(
+                        text = severityLabel,
+                        color = severityColor,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.5.sp,
+                        modifier = Modifier
+                            .background(
+                                severityColor.copy(alpha = 0.15f),
+                                RoundedCornerShape(4.dp)
+                            )
+                            .padding(horizontal = 5.dp, vertical = 1.dp)
+                    )
+                }
+            }
         }
     }
 }

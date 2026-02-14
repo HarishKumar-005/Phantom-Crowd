@@ -8,6 +8,7 @@ import com.phantomcrowd.data.AnchorData
 import com.phantomcrowd.data.AnchorRepository
 import com.phantomcrowd.data.FirebaseAnchorManager
 import com.phantomcrowd.data.GeofenceManager
+import com.phantomcrowd.data.ImpactStats
 import com.phantomcrowd.data.LocalStorageManager
 import com.phantomcrowd.utils.GPSUtils
 import com.phantomcrowd.utils.Logger
@@ -149,6 +150,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         NetworkHelper.networkStatusFlow(application)
             .onEach { _isOnline.value = it }
             .launchIn(viewModelScope)
+
+        // One-time migration: backfill status/severity on existing surface_anchors
+        val prefs = application.getSharedPreferences("phantom_crowd_prefs", 0)
+        if (!prefs.getBoolean("backfill_surface_anchors_done", false)) {
+            viewModelScope.launch(Dispatchers.IO + exceptionHandler) {
+                val updated = firebaseManager.backfillSurfaceAnchors()
+                if (updated >= 0) {
+                    prefs.edit().putBoolean("backfill_surface_anchors_done", true).apply()
+                    Logger.i(Logger.Category.DATA, "Backfill migration complete: $updated docs updated")
+                }
+            }
+        }
     }
     
     /**
@@ -459,6 +472,42 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // ═══════════════════════════════════════════════════════════════════════
+    // Impact Dashboard: Global real-time stats
+    // ═══════════════════════════════════════════════════════════════════════
+
+    private val _impactStats = MutableStateFlow<ImpactStats?>(null)
+    val impactStats: StateFlow<ImpactStats?> = _impactStats.asStateFlow()
+
+    private var impactSyncJob: Job? = null
+
+    /**
+     * Start observing global Firestore data for the Impact Dashboard.
+     * Call when the Impact Dashboard tab becomes visible.
+     */
+    fun startImpactDashboardSync() {
+        if (impactSyncJob?.isActive == true) return  // already running
+        impactSyncJob = viewModelScope.launch(exceptionHandler) {
+            Logger.i(Logger.Category.DATA, "Impact Dashboard: starting global sync")
+            firebaseManager.observeGlobalImpactData()
+                .collect { stats ->
+                    _impactStats.value = stats
+                    Logger.d(Logger.Category.DATA,
+                        "Impact Dashboard: ${stats.totalReports} reports, ${stats.issuesFixed} fixed")
+                }
+        }
+    }
+
+    /**
+     * Stop observing global Firestore data.
+     * Call when leaving the Impact Dashboard tab.
+     */
+    fun stopImpactDashboardSync() {
+        impactSyncJob?.cancel()
+        impactSyncJob = null
+        Logger.d(Logger.Category.DATA, "Impact Dashboard: sync stopped")
+    }
+
     /**
      * Cleanup when ViewModel is destroyed.
      */
@@ -466,6 +515,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         super.onCleared()
         Logger.d(Logger.Category.UI, "MainViewModel onCleared - cleaning up")
         cleanupGeofences()
+        stopImpactDashboardSync()
         gpsUtils.cleanup()
     }
 

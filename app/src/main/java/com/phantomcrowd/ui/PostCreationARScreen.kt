@@ -73,7 +73,7 @@ fun PostCreationARScreen(
     viewModel: MainViewModel,
     onPostCreated: () -> Unit,
     onCancel: () -> Unit,
-    onOpenARPlacement: ((messageText: String, category: String) -> Unit)? = null
+    onOpenARPlacement: ((messageText: String, category: String, severity: String, useCase: String) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -275,7 +275,9 @@ fun PostCreationARScreen(
                             // This prevents duplicate entries (one in issues, one in surface_anchors)
                             onOpenARPlacement?.invoke(
                                 formState.description,
-                                formState.selectedCategory?.id ?: "general"
+                                formState.selectedCategory?.id ?: "general",
+                                formState.severity.name,
+                                formState.selectedUseCase?.name ?: ""
                             )
                             formState = formState.copy(currentStep = 5, saveSuccess = true)
                         },

@@ -21,127 +21,52 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.phantomcrowd.data.*
 import com.phantomcrowd.ui.theme.DesignSystem
-import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 
 /**
- * Data class for overall statistics
- */
-data class OverallStats(
-    val totalReports: Int = 0,
-    val resolvedReports: Int = 0,
-    val redZones: Int = 0,
-    val peopleReached: Int = 0
-)
-
-/**
- * Data class for per-use-case statistics
- */
-data class UseCaseStat(
-    val useCase: UseCase,
-    val totalReports: Int = 0,
-    val resolvedReports: Int = 0,
-    val pendingReports: Int = 0,
-    val resolutionRate: Float = 0f,
-    val trend: String = "→ 0%",
-    val severityBreakdown: Map<Severity, Int> = emptyMap(),
-    val authorityActions: List<String> = emptyList(),
-    val topHotspots: List<Pair<String, Int>> = emptyList()
-)
-
-/**
- * Impact Dashboard Screen - Shows community impact statistics.
- * All data queried live from Firestore.
+ * Impact Dashboard Screen — shows real-time community impact statistics.
+ *
+ * All data is streamed live from Firestore via [MainViewModel.impactStats].
+ * Collections used: issues, surface_anchors, authority_actions.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ImpactDashboardScreen(viewModel: MainViewModel) {
-    val scope = rememberCoroutineScope()
-    val anchors by viewModel.anchors.collectAsState()
-    
-    // Loading state
-    var isLoading by remember { mutableStateOf(true) }
+    // Observe real-time stats from ViewModel
+    val impactStats by viewModel.impactStats.collectAsState()
+
+    // Pull-to-refresh state
     var isRefreshing by remember { mutableStateOf(false) }
-    
-    // Stats calculated from live data
-    var overallStats by remember { mutableStateOf(OverallStats()) }
-    var useCaseStats by remember { mutableStateOf<Map<UseCase, UseCaseStat>>(emptyMap()) }
-    var expandedUseCase by remember { mutableStateOf<UseCase?>(null) }
-    
-    // Calculate stats from anchors
-    LaunchedEffect(anchors) {
-        isLoading = true
-        
-        // Calculate overall stats
-        val total = anchors.size
-        val resolved = anchors.count { it.status == "RESOLVED" }
-        
-        // Count red zones (locations with 5+ issues)
-        val locationCounts = anchors.groupBy { 
-            "${String.format("%.3f", it.latitude)},${String.format("%.3f", it.longitude)}"
-        }
-        val redZones = locationCounts.count { it.value.size >= 5 }
-        
-        overallStats = OverallStats(
-            totalReports = total,
-            resolvedReports = resolved,
-            redZones = redZones,
-            peopleReached = total * 100 // Estimated reach
-        )
-        
-        // Calculate per-use-case stats
-        val stats = mutableMapOf<UseCase, UseCaseStat>()
-        
-        UseCase.entries.forEach { useCase ->
-            val useCaseAnchors = anchors.filter { it.useCase == useCase.name }
-            val useCaseTotal = useCaseAnchors.size
-            val useCaseResolved = useCaseAnchors.count { it.status == "RESOLVED" }
-            
-            // Severity breakdown
-            val severityBreakdown = Severity.entries.associateWith { severity ->
-                useCaseAnchors.count { it.severity == severity.name }
-            }
-            
-            // Top hotspots
-            val hotspots = useCaseAnchors
-                .filter { it.locationName.isNotEmpty() }
-                .groupBy { it.locationName }
-                .map { it.key to it.value.size }
-                .sortedByDescending { it.second }
-                .take(3)
-            
-            stats[useCase] = UseCaseStat(
-                useCase = useCase,
-                totalReports = useCaseTotal,
-                resolvedReports = useCaseResolved,
-                pendingReports = useCaseTotal - useCaseResolved,
-                resolutionRate = if (useCaseTotal > 0) useCaseResolved.toFloat() / useCaseTotal else 0f,
-                trend = if (useCaseTotal > 0) "↑ Active" else "→ No data",
-                severityBreakdown = severityBreakdown,
-                authorityActions = generateAuthorityActions(useCaseTotal),
-                topHotspots = hotspots
-            )
-        }
-        
-        useCaseStats = stats
-        isLoading = false
+
+    // Expansion state for category cards
+    var expandedCategory by remember { mutableStateOf<String?>(null) }
+
+    // Start/stop sync with lifecycle
+    LaunchedEffect(Unit) {
+        viewModel.startImpactDashboardSync()
     }
-    
-    // Refresh function
-    fun refresh() {
-        scope.launch {
-            isRefreshing = true
-            viewModel.updateLocation()
-            kotlinx.coroutines.delay(1000)
+    DisposableEffect(Unit) {
+        onDispose {
+            viewModel.stopImpactDashboardSync()
+        }
+    }
+
+    // Handle pull-to-refresh: briefly restart sync
+    LaunchedEffect(isRefreshing) {
+        if (isRefreshing) {
+            viewModel.stopImpactDashboardSync()
+            kotlinx.coroutines.delay(300)
+            viewModel.startImpactDashboardSync()
+            kotlinx.coroutines.delay(700)
             isRefreshing = false
         }
     }
-    
+
     Box(
         modifier = Modifier.fillMaxSize()
     ) {
-        if (isLoading && anchors.isEmpty()) {
+        if (impactStats == null) {
             // Loading state
             Box(
                 modifier = Modifier.fillMaxSize(),
@@ -154,12 +79,14 @@ fun ImpactDashboardScreen(viewModel: MainViewModel) {
                 }
             }
         } else {
+            val stats = impactStats!!
+
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Header
+                // ─── Header ─────────────────────────────────────────
                 item {
                     Text(
                         "📊 Community Impact",
@@ -172,14 +99,21 @@ fun ImpactDashboardScreen(viewModel: MainViewModel) {
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    // Last synced
+                    val sdf = remember { SimpleDateFormat("h:mm a", Locale.getDefault()) }
+                    Text(
+                        "Last synced: ${sdf.format(Date(stats.lastSyncedMs))}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                    )
                 }
-                
-                // Overall Stats Card
+
+                // ─── Overall Stats Card ─────────────────────────────
                 item {
-                    OverallStatsCard(overallStats)
+                    OverallStatsCard(stats)
                 }
-                
-                // Section header
+
+                // ─── Section header ─────────────────────────────────
                 item {
                     Text(
                         "By Category",
@@ -188,30 +122,52 @@ fun ImpactDashboardScreen(viewModel: MainViewModel) {
                         modifier = Modifier.padding(top = 8.dp)
                     )
                 }
-                
-                // Use Case Cards
-                items(UseCase.entries) { useCase ->
-                    val stat = useCaseStats[useCase] ?: UseCaseStat(useCase)
-                    UseCaseStatCard(
-                        stat = stat,
-                        isExpanded = expandedUseCase == useCase,
-                        onToggleExpand = {
-                            expandedUseCase = if (expandedUseCase == useCase) null else useCase
+
+                // ─── Category Breakdown Cards ───────────────────────
+                if (stats.categoryBreakdowns.isEmpty()) {
+                    item {
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                "No reports yet. Be the first to make your community safer!",
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.padding(20.dp),
+                                textAlign = TextAlign.Center
+                            )
                         }
-                    )
+                    }
+                } else {
+                    items(
+                        stats.categoryBreakdowns,
+                        key = { it.category }
+                    ) { breakdown ->
+                        CategoryStatCard(
+                            breakdown = breakdown,
+                            isExpanded = expandedCategory == breakdown.category,
+                            onToggleExpand = {
+                                expandedCategory =
+                                    if (expandedCategory == breakdown.category) null
+                                    else breakdown.category
+                            }
+                        )
+                    }
                 }
-                
-                // Your Contribution Section
+
+                // ─── Your Contribution ──────────────────────────────
                 item {
-                    YourContributionCard()
+                    YourContributionCard(stats)
                 }
-                
-                // Success Stories Section
+
+                // ─── Success Stories ────────────────────────────────
                 item {
-                    SuccessStoriesSection()
+                    SuccessStoriesSection(stats.successStories)
                 }
-                
-                // Bottom spacing
+
+                // Bottom spacer
                 item {
                     Spacer(modifier = Modifier.height(32.dp))
                 }
@@ -220,11 +176,15 @@ fun ImpactDashboardScreen(viewModel: MainViewModel) {
     }
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// Composable sub-components
+// ═══════════════════════════════════════════════════════════════════
+
 /**
- * Overall statistics card with 2x2 grid
+ * Overall statistics card with 2×2 grid.
  */
 @Composable
-private fun OverallStatsCard(stats: OverallStats) {
+private fun OverallStatsCard(stats: ImpactStats) {
     Card(
         colors = CardDefaults.cardColors(
             containerColor = DesignSystem.Colors.primaryContainer
@@ -242,7 +202,7 @@ private fun OverallStatsCard(stats: OverallStats) {
                     icon = "📋"
                 )
                 StatItem(
-                    value = stats.resolvedReports.toString(),
+                    value = stats.issuesFixed.toString(),
                     label = "Issues Fixed",
                     icon = "✅"
                 )
@@ -258,7 +218,7 @@ private fun OverallStatsCard(stats: OverallStats) {
                     icon = "🔴"
                 )
                 StatItem(
-                    value = formatNumber(stats.peopleReached),
+                    value = formatNumber(stats.estimatedReach),
                     label = "Estimated Reach",
                     icon = "👥"
                 )
@@ -268,7 +228,7 @@ private fun OverallStatsCard(stats: OverallStats) {
 }
 
 /**
- * Single stat item
+ * Single stat item.
  */
 @Composable
 private fun StatItem(value: String, label: String, icon: String) {
@@ -293,17 +253,21 @@ private fun StatItem(value: String, label: String, icon: String) {
 }
 
 /**
- * Use case statistics expandable card
+ * Expandable card for a single category breakdown.
  */
 @Composable
-private fun UseCaseStatCard(
-    stat: UseCaseStat,
+private fun CategoryStatCard(
+    breakdown: CategoryBreakdown,
     isExpanded: Boolean,
     onToggleExpand: () -> Unit
 ) {
+    // Try to resolve a UseCase color, fall back to primary
+    val useCaseEnum = UseCase.fromString(breakdown.category)
+    val accentColor = useCaseEnum?.color ?: DesignSystem.Colors.primary
+
     Card(
         colors = CardDefaults.cardColors(
-            containerColor = stat.useCase.color.copy(alpha = 0.1f)
+            containerColor = accentColor.copy(alpha = 0.1f)
         ),
         modifier = Modifier
             .fillMaxWidth()
@@ -322,42 +286,44 @@ private fun UseCaseStatCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(stat.useCase.icon, fontSize = 32.sp)
+                    Text(breakdown.icon, fontSize = 32.sp)
                     Spacer(modifier = Modifier.width(12.dp))
                     Column {
                         Text(
-                            stat.useCase.label,
+                            breakdown.displayName,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
-                            color = stat.useCase.color
+                            color = accentColor
                         )
                         Text(
-                            "${stat.totalReports} reports ${stat.trend}",
+                            "${breakdown.total} reports",
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
                 }
                 Icon(
-                    if (isExpanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                    if (isExpanded) Icons.Filled.KeyboardArrowUp
+                    else Icons.Filled.KeyboardArrowDown,
                     contentDescription = if (isExpanded) "Collapse" else "Expand"
                 )
             }
-            
+
             // Quick stats (always visible)
             Spacer(modifier = Modifier.height(12.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
-                QuickStat("Fixed", stat.resolvedReports.toString(), DesignSystem.Colors.success)
-                QuickStat("Pending", stat.pendingReports.toString(), DesignSystem.Colors.warning)
+                QuickStat("Fixed", breakdown.fixed.toString(), DesignSystem.Colors.success)
+                QuickStat("Pending", breakdown.pending.toString(), DesignSystem.Colors.warning)
+                QuickStat("In Progress", breakdown.inProgress.toString(), DesignSystem.Colors.primary)
                 QuickStat(
-                    "Rate", 
-                    "${(stat.resolutionRate * 100).toInt()}%", 
+                    "Rate",
+                    "${(breakdown.resolutionRate * 100).toInt()}%",
                     DesignSystem.Colors.primary
                 )
             }
-            
+
             // Expanded content
             AnimatedVisibility(
                 visible = isExpanded,
@@ -367,55 +333,42 @@ private fun UseCaseStatCard(
                 Column(modifier = Modifier.padding(top = 16.dp)) {
                     Divider()
                     Spacer(modifier = Modifier.height(16.dp))
-                    
-                    // Severity breakdown
-                    Text(
-                        "SEVERITY BREAKDOWN",
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    
-                    stat.severityBreakdown.forEach { (severity, count) ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                "${severity.icon} ${severity.label}",
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                            Text(
-                                "$count reports",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = severity.color
-                            )
-                        }
-                    }
-                    
-                    // Authority actions
-                    if (stat.authorityActions.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(16.dp))
+
+                    // Authority Actions (real data)
+                    if (breakdown.recentActions.isNotEmpty()) {
                         Text(
                             "AUTHORITY ACTIONS",
                             style = MaterialTheme.typography.labelLarge,
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(8.dp))
-                        
-                        stat.authorityActions.forEach { action ->
+
+                        breakdown.recentActions.forEach { action ->
+                            val actionIcon = when (action.actionType.uppercase()) {
+                                "RESOLVED" -> "✅"
+                                "IN_PROGRESS" -> "🔄"
+                                "REJECTED" -> "❌"
+                                else -> "📋"
+                            }
+                            val sdf = remember { SimpleDateFormat("MMM d", Locale.getDefault()) }
+                            val dateStr = if (action.timestamp > 0)
+                                sdf.format(Date(action.timestamp)) else ""
                             Text(
-                                action,
+                                "$actionIcon ${action.actionType.replace("_", " ")} — ${action.notes.ifEmpty { action.adminEmail }} $dateStr",
                                 style = MaterialTheme.typography.bodyMedium,
                                 modifier = Modifier.padding(vertical = 2.dp)
                             )
                         }
+                    } else {
+                        Text(
+                            "⏳ Awaiting authority review",
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(vertical = 2.dp)
+                        )
                     }
-                    
+
                     // Top hotspots
-                    if (stat.topHotspots.isNotEmpty()) {
+                    if (breakdown.topHotspots.isNotEmpty()) {
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
                             "TOP HOTSPOTS",
@@ -423,10 +376,10 @@ private fun UseCaseStatCard(
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(modifier = Modifier.height(8.dp))
-                        
-                        stat.topHotspots.forEachIndexed { index, (location, count) ->
+
+                        breakdown.topHotspots.forEachIndexed { index, hotspot ->
                             Text(
-                                "${index + 1}. $location ($count reports)",
+                                "${index + 1}. $hotspot",
                                 style = MaterialTheme.typography.bodyMedium,
                                 modifier = Modifier.padding(vertical = 2.dp)
                             )
@@ -439,7 +392,7 @@ private fun UseCaseStatCard(
 }
 
 /**
- * Quick stat pill
+ * Quick stat pill.
  */
 @Composable
 private fun QuickStat(label: String, value: String, color: Color) {
@@ -459,10 +412,10 @@ private fun QuickStat(label: String, value: String, color: Color) {
 }
 
 /**
- * Your contribution card
+ * Your contribution card.
  */
 @Composable
-private fun YourContributionCard() {
+private fun YourContributionCard(stats: ImpactStats) {
     Card(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.secondaryContainer
@@ -478,16 +431,19 @@ private fun YourContributionCard() {
                     fontWeight = FontWeight.Bold
                 )
             }
-            
+
             Spacer(modifier = Modifier.height(16.dp))
-            
+
             Text(
-                "Keep reporting to make your community safer!",
+                if (stats.totalReports > 0)
+                    "Keep reporting to make your community safer!"
+                else
+                    "Start reporting issues to make your community safer!",
                 style = MaterialTheme.typography.bodyMedium
             )
-            
+
             Spacer(modifier = Modifier.height(12.dp))
-            
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly
@@ -505,46 +461,75 @@ private fun YourContributionCard() {
 }
 
 /**
- * Success stories section
+ * Success stories section — real resolved issues from authority_actions.
  */
 @Composable
-private fun SuccessStoriesSection() {
+private fun SuccessStoriesSection(stories: List<SuccessStory>) {
     Column {
         Text(
             "Success Stories",
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold
         )
-        
+
         Spacer(modifier = Modifier.height(12.dp))
-        
-        val stories = listOf(
-            "78 reports → 48-hour fix" to "Women's safety zone near station now has police patrols",
-            "34 accessibility barriers removed" to "Disabled students can now graduate with full campus access",
-            "50 workers documented wage theft" to "Union helped workers recover unpaid wages"
-        )
-        
-        stories.forEach { (title, description) ->
+
+        if (stories.isEmpty()) {
             Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp),
+                modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceVariant
                 )
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        "✨ $title",
+                        "📝 No resolved issues yet",
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        description,
+                        "Reports are being reviewed by authorities. Check back soon!",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                }
+            }
+        } else {
+            stories.forEach { story ->
+                val sdf = remember { SimpleDateFormat("MMM d, yyyy", Locale.getDefault()) }
+                val dateStr = if (story.resolvedAt > 0)
+                    sdf.format(Date(story.resolvedAt)) else ""
+
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            "✨ ${story.title}",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            story.description,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        if (dateStr.isNotEmpty()) {
+                            Text(
+                                dateStr,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -552,35 +537,7 @@ private fun SuccessStoriesSection() {
 }
 
 /**
- * Generate authority actions based on report count
- */
-private fun generateAuthorityActions(reportCount: Int): List<String> {
-    if (reportCount == 0) return emptyList()
-    
-    val actions = mutableListOf<String>()
-    
-    if (reportCount >= 5) {
-        actions.add("✓ Zone flagged for monitoring")
-    }
-    if (reportCount >= 10) {
-        actions.add("✓ Authority notification sent")
-    }
-    if (reportCount >= 20) {
-        actions.add("✓ Priority response activated")
-    }
-    if (reportCount >= 50) {
-        actions.add("✓ Permanent measures deployed")
-    }
-    
-    if (actions.isEmpty()) {
-        actions.add("⏳ Gathering more data for action")
-    }
-    
-    return actions
-}
-
-/**
- * Format large numbers
+ * Format large numbers for display.
  */
 private fun formatNumber(num: Int): String {
     return when {

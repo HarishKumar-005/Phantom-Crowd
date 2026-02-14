@@ -87,7 +87,16 @@ data class SurfaceAnchor(
     
     @get:PropertyName("imageUrl")
     @set:PropertyName("imageUrl")
-    var imageUrl: String? = null
+    var imageUrl: String? = null,
+    
+    // Status and severity for admin dashboard integration
+    @get:PropertyName("status")
+    @set:PropertyName("status")
+    var status: String = "PENDING",
+    
+    @get:PropertyName("severity")
+    @set:PropertyName("severity")
+    var severity: String = "MEDIUM"
 ) {
     /**
      * Convert to Firestore map for saving
@@ -107,7 +116,9 @@ data class SurfaceAnchor(
         "surfaceNormalZ" to surfaceNormalZ,
         "timestamp" to timestamp,
         "userId" to userId,
-        "imageUrl" to imageUrl
+        "imageUrl" to imageUrl,
+        "status" to status,
+        "severity" to severity
     )
     
     /**
@@ -167,7 +178,9 @@ data class SurfaceAnchor(
                 surfaceNormalZ = (data["surfaceNormalZ"] as? Number)?.toFloat() ?: 1f,
                 timestamp = (data["timestamp"] as? Number)?.toLong() ?: System.currentTimeMillis(),
                 userId = data["userId"] as? String ?: "anonymous",
-                imageUrl = data["imageUrl"] as? String
+                imageUrl = data["imageUrl"] as? String,
+                status = data["status"] as? String ?: "PENDING",
+                severity = data["severity"] as? String ?: "MEDIUM"
             )
         }
     }

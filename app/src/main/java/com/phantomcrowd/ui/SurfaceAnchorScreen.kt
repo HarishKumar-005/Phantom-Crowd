@@ -57,6 +57,8 @@ import androidx.lifecycle.repeatOnLifecycle
 fun SurfaceAnchorScreen(
     messageText: String,
     category: String,
+    severity: String = "MEDIUM",
+    useCase: String = "",
     userLocation: Location?,
     onAnchorPlaced: (SurfaceAnchor) -> Unit,
     onCancel: () -> Unit
@@ -230,6 +232,8 @@ fun SurfaceAnchorScreen(
                                                 location = location,
                                                 messageText = messageText,
                                                 category = category,
+                                                severity = severity,
+                                                useCase = useCase,
                                                 onSuccess = { anchor ->
                                                     placementSuccess = true
                                                     scope.launch {
@@ -249,6 +253,8 @@ fun SurfaceAnchorScreen(
                                                 location = location,
                                                 messageText = messageText,
                                                 category = category,
+                                                severity = severity,
+                                                useCase = useCase,
                                                 onSuccess = { anchor ->
                                                     placementSuccess = true
                                                     scope.launch {
@@ -516,6 +522,8 @@ private fun performPlacement(
     location: Location,
     messageText: String,
     category: String,
+    severity: String,
+    useCase: String,
     onSuccess: (SurfaceAnchor) -> Unit,
     onError: (String) -> Unit
 ) {
@@ -558,7 +566,8 @@ private fun performPlacement(
             surfaceNormalX = zAxis[0],
             surfaceNormalY = zAxis[1],
             surfaceNormalZ = zAxis[2],
-            timestamp = System.currentTimeMillis()
+            timestamp = System.currentTimeMillis(),
+            severity = severity,
         )
         
         Logger.i(Logger.Category.AR, "Anchor created at (${translation[0]}, ${translation[1]}, ${translation[2]})")
@@ -577,6 +586,8 @@ private fun usePlaneCenterPlacement(
     location: Location,
     messageText: String,
     category: String,
+    severity: String,
+    useCase: String,
     onSuccess: (SurfaceAnchor) -> Unit,
     onError: (String) -> Unit
 ) {
@@ -606,7 +617,8 @@ private fun usePlaneCenterPlacement(
             surfaceNormalX = zAxis[0],
             surfaceNormalY = zAxis[1],
             surfaceNormalZ = zAxis[2],
-            timestamp = System.currentTimeMillis()
+            timestamp = System.currentTimeMillis(),
+            severity = severity,
         )
         
         Logger.i(Logger.Category.AR, "Fallback anchor at plane center: (${translation[0]}, ${translation[1]}, ${translation[2]})")
