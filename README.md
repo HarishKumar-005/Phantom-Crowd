@@ -1,7 +1,7 @@
 
 # Phantom Crowd
 
-### Spatial Civic Reporting Infrastructure using Augmented Reality
+### Open infrastructure for AR-based civic reporting systems
 
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Platform](https://img.shields.io/badge/platform-Android-blue)
