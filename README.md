@@ -5,7 +5,6 @@
 [![GitHub](https://img.shields.io/badge/GitHub-PhantomCrowd-blue?style=flat-square&logo=github)](https://github.com/your-username/phantom-crowd)
 [![Android](https://img.shields.io/badge/Android-Kotlin-green?style=flat-square&logo=android)](https://developer.android.com/kotlin)
 [![ARCore](https://img.shields.io/badge/ARCore-1.41.0-red?style=flat-square&logo=google)](https://developers.google.com/ar)
-[![Hackathon](https://img.shields.io/badge/Hackathon-2026-yellow?style=flat-square)](#)
 
 ---
 
@@ -266,15 +265,6 @@ phantom-crowd/
 ├── gradle.properties
 └── README.md                              # This file
 ```
-
----
-
-## Quick Links
-
-- 🔗 [GitHub Repository](https://github.com/HarishKumar-005/Phantom-Crowd)
-- 📱 [Download APK](https://github.com/HarishKumar-005/Phantom-Crowd/releases/download/v1.0/Phantom-Crowd.apk)
-- 🎥 [Demo Video](https://drive.google.com/file/d/12xKXQiIaCgmRVPmgjaMb8uyvOgjxfudr/view?usp=sharing)
-
 ---
 
 Made with ❤️ for social justice. 👻
