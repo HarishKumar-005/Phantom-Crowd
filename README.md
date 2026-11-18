@@ -269,19 +269,6 @@ phantom-crowd/
 
 ---
 
-## 🏆 Hackathon Details :
-
-**Team name:** Tech Pros
-
-**Team leader name:** Akshaya S
-
-**Team Members :**
-1. Harish Kumar S P
-2. Kaviya K
-3.Layasree S
-
----
-
 ## Quick Links
 
 - 🔗 [GitHub Repository](https://github.com/HarishKumar-005/Phantom-Crowd)
